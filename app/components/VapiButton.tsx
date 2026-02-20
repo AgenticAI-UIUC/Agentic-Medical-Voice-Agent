@@ -1,3 +1,5 @@
+'use client';
+
 import React from 'react';
 import { useVapi } from '../hooks/useVapi';
 
@@ -10,9 +12,9 @@ interface VapiButtonProps {
 }
 
 export const VapiButton: React.FC<VapiButtonProps> = ({
-  publicKey = process.env.REACT_APP_VAPI_PUBLIC_KEY,
-  assistantId = process.env.REACT_APP_VAPI_ASSISTANT_ID,
-  baseUrl = process.env.REACT_APP_VAPI_BASE_URL,
+  publicKey = process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY,
+  assistantId = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID,
+  baseUrl = process.env.NEXT_PUBLIC_VAPI_BASE_URL,
   className,
   children,
 }) => {
