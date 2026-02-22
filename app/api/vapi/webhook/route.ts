@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type {
   VapiWebhookPayload,
-  VapiWebhookMessage,
-  AssistantRequestMessage,
   StatusUpdateMessage,
   FunctionCallMessage,
   EndOfCallReportMessage,
@@ -13,6 +11,14 @@ import type {
   FunctionCallResponse,
 } from '@/app/types/vapi';
 import { broadcastToClients } from '../events/route';
+import {
+  persistEndOfCallArtifacts,
+  persistStatusUpdate,
+  persistTranscriptTurn,
+} from '@/app/lib/callPersistence';
+import { redactPhiText } from '@/app/lib/phi';
+
+export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
@@ -30,7 +36,7 @@ export async function POST(request: NextRequest) {
       case 'assistant-request':
         // Fired when the assistant is requested
         console.log('Assistant requested for call');
-        return handleAssistantRequest(message);
+        return handleAssistantRequest();
 
       case 'status-update':
         // Fired when call status changes (e.g., ringing, in-progress, ended)
@@ -79,9 +85,7 @@ export async function POST(request: NextRequest) {
 
 // Handler functions for each event type
 
-function handleAssistantRequest(
-  message: AssistantRequestMessage
-): NextResponse<AssistantRequestResponse> {
+function handleAssistantRequest(): NextResponse<AssistantRequestResponse> {
   // Return assistant configuration if needed
   // This allows dynamic assistant configuration per call
   const response: AssistantRequestResponse = {
@@ -100,7 +104,7 @@ function handleAssistantRequest(
   return NextResponse.json(response);
 }
 
-function handleStatusUpdate(message: StatusUpdateMessage) {
+async function handleStatusUpdate(message: StatusUpdateMessage) {
   // Handle call status updates
   // You might want to log this to a database
   const { status, call } = message;
@@ -112,8 +116,11 @@ function handleStatusUpdate(message: StatusUpdateMessage) {
     data: { status, callId: call.id, timestamp: new Date().toISOString() },
   });
 
-  // TODO: Store status update in database
-  // TODO: Trigger notifications based on status
+  try {
+    await persistStatusUpdate(message);
+  } catch (error) {
+    console.error('Status update persistence skipped:', error);
+  }
 
   return NextResponse.json({ success: true });
 }
@@ -130,7 +137,7 @@ function handleFunctionCall(
   console.log('Call ID:', call.id);
 
   // Example function implementations
-  let result: any;
+  let result: Record<string, unknown>;
 
   switch (name) {
     case 'scheduleAppointment':
@@ -171,7 +178,7 @@ function handleFunctionCall(
   return NextResponse.json({ result });
 }
 
-function handleEndOfCallReport(message: EndOfCallReportMessage) {
+async function handleEndOfCallReport(message: EndOfCallReportMessage) {
   // Process end-of-call analytics
   // Store in database, send notifications, etc.
   const {
@@ -192,6 +199,20 @@ function handleEndOfCallReport(message: EndOfCallReportMessage) {
     messageCount: messages?.length,
   });
 
+  let persistedArtifacts:
+    | Awaited<ReturnType<typeof persistEndOfCallArtifacts>>
+    | undefined;
+  const allowPhiStream = process.env.ALLOW_MONITOR_PHI_STREAM === 'true';
+
+  try {
+    persistedArtifacts = await persistEndOfCallArtifacts(message);
+  } catch (error) {
+    console.error('End-of-call persistence skipped:', error);
+  }
+
+  const redactedTranscript = persistedArtifacts?.redactedTranscript ?? redactPhiText(transcript);
+  const redactedSummary = redactPhiText(summary);
+
   // Broadcast end-of-call report to frontend clients
   broadcastToClients({
     type: 'end-of-call-report',
@@ -200,26 +221,24 @@ function handleEndOfCallReport(message: EndOfCallReportMessage) {
       duration: call.duration,
       endedReason,
       recordingUrl,
-      transcript,
-      summary,
+      transcript: allowPhiStream ? transcript : redactedTranscript,
+      redactedTranscript,
+      summary: allowPhiStream ? summary : redactedSummary,
+      structuredSummary: persistedArtifacts?.structuredSummary,
       messages,
       timestamp: new Date().toISOString(),
     },
   });
 
-  // TODO: Store this data in your database
-  // TODO: Send notifications if needed
-  // TODO: Trigger post-call workflows
-  // TODO: Process transcript for analytics
-  // TODO: Store recording URL
-
   return NextResponse.json({ success: true });
 }
 
-function handleTranscript(message: TranscriptMessage) {
+async function handleTranscript(message: TranscriptMessage) {
   // Process real-time transcripts
   // You can use this for live monitoring or sentiment analysis
   const { transcript, role, call } = message;
+  const allowPhiStream = process.env.ALLOW_MONITOR_PHI_STREAM === 'true';
+  const redactedTranscript = redactPhiText(transcript);
 
   console.log(`[${call.id}] ${role}: ${transcript}`);
 
@@ -227,16 +246,19 @@ function handleTranscript(message: TranscriptMessage) {
   broadcastToClients({
     type: 'transcript',
     data: {
-      transcript,
+      transcript: allowPhiStream ? transcript : redactedTranscript,
+      redactedTranscript,
       role,
       callId: call.id,
       timestamp: new Date().toISOString(),
     },
   });
 
-  // TODO: Store transcript in database
-  // TODO: Perform sentiment analysis
-  // TODO: Trigger alerts based on keywords
+  try {
+    await persistTranscriptTurn(message);
+  } catch (error) {
+    console.error('Transcript persistence skipped:', error);
+  }
 
   return NextResponse.json({ success: true });
 }

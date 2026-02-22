@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
+import { maskTextForUi } from '@/app/lib/phi';
 
 interface TranscriptMessage {
   id: string;
   role: 'user' | 'assistant';
   transcript: string;
+  redactedTranscript?: string;
   timestamp: string;
 }
 
@@ -21,11 +23,20 @@ interface CallReport {
   endedReason: string;
   recordingUrl?: string;
   transcript?: string;
+  redactedTranscript?: string;
   summary?: string;
+  structuredSummary?: {
+    intent: string;
+    outcome: string;
+    reasonCodes: string[];
+    nextAction: string;
+    generatedAt: string;
+  };
   timestamp: string;
 }
 
 export default function CallMonitor() {
+  const allowPhiView = process.env.NEXT_PUBLIC_ALLOW_MONITOR_PHI_VIEW === 'true';
   const [connected, setConnected] = useState(false);
   const [transcripts, setTranscripts] = useState<TranscriptMessage[]>([]);
   const [callStatus, setCallStatus] = useState<CallStatus | null>(null);
@@ -59,6 +70,7 @@ export default function CallMonitor() {
                 id: `${data.data.callId}-${Date.now()}`,
                 role: data.data.role,
                 transcript: data.data.transcript,
+                redactedTranscript: data.data.redactedTranscript,
                 timestamp: data.data.timestamp,
               },
             ]);
@@ -147,7 +159,12 @@ export default function CallMonitor() {
                 <div className="text-xs font-medium mb-1 text-gray-700">
                   {message.role === 'assistant' ? 'Assistant' : 'Patient'}
                 </div>
-                <div className="text-sm text-gray-900">{message.transcript}</div>
+                <div className="text-sm text-gray-900">
+                  {maskTextForUi(
+                    message.redactedTranscript ?? message.transcript,
+                    allowPhiView
+                  )}
+                </div>
                 <div className="text-xs text-gray-600 mt-1">
                   {new Date(message.timestamp).toLocaleTimeString()}
                 </div>
@@ -193,7 +210,33 @@ export default function CallMonitor() {
               <div>
                 <div className="text-sm font-medium text-gray-700 mb-1">Summary</div>
                 <div className="text-sm text-gray-900 bg-gray-50 p-3 rounded border">
-                  {callReport.summary}
+                  {maskTextForUi(callReport.summary, allowPhiView)}
+                </div>
+              </div>
+            )}
+
+            {callReport.structuredSummary && (
+              <div>
+                <div className="text-sm font-medium text-gray-700 mb-1">
+                  Structured Summary
+                </div>
+                <div className="text-sm text-gray-900 bg-gray-50 p-3 rounded border space-y-1">
+                  <div>
+                    <span className="font-medium">Intent:</span>{' '}
+                    {callReport.structuredSummary.intent}
+                  </div>
+                  <div>
+                    <span className="font-medium">Outcome:</span>{' '}
+                    {callReport.structuredSummary.outcome}
+                  </div>
+                  <div>
+                    <span className="font-medium">Reason Codes:</span>{' '}
+                    {callReport.structuredSummary.reasonCodes.join(', ')}
+                  </div>
+                  <div>
+                    <span className="font-medium">Next Action:</span>{' '}
+                    {callReport.structuredSummary.nextAction}
+                  </div>
                 </div>
               </div>
             )}
@@ -228,7 +271,10 @@ export default function CallMonitor() {
                   Full Transcript
                 </div>
                 <div className="text-sm text-gray-900 bg-gray-50 p-3 rounded border max-h-48 overflow-y-auto whitespace-pre-wrap">
-                  {callReport.transcript}
+                  {maskTextForUi(
+                    callReport.redactedTranscript ?? callReport.transcript,
+                    allowPhiView
+                  )}
                 </div>
               </div>
             )}

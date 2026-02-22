@@ -30,7 +30,7 @@ export interface VapiCall {
   transcript?: string;
   summary?: string;
   messages?: VapiMessage[];
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface VapiPhoneNumber {
@@ -43,7 +43,7 @@ export interface VapiCustomer {
   number?: string;
   name?: string;
   email?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface VapiAssistant {
@@ -79,7 +79,7 @@ export interface VapiMessage {
 
 export interface VapiFunctionCall {
   name: string;
-  parameters: Record<string, any>;
+  parameters: Record<string, unknown>;
 }
 
 // Webhook event message types
@@ -116,7 +116,7 @@ export interface EndOfCallReportMessage {
   timestamp: string;
   artifact?: {
     messages?: VapiMessage[];
-    messagesOpenAIFormatted?: any[];
+    messagesOpenAIFormatted?: unknown[];
   };
 }
 
@@ -124,6 +124,8 @@ export interface TranscriptMessage {
   type: 'transcript';
   role: 'user' | 'assistant';
   transcript: string;
+  confidence?: number;
+  toolCallContext?: Record<string, unknown>;
   call: VapiCall;
   timestamp: string;
 }
@@ -172,7 +174,7 @@ export interface AssistantRequestResponse {
       description?: string;
       parameters?: {
         type: 'object';
-        properties: Record<string, any>;
+        properties: Record<string, unknown>;
         required?: string[];
       };
     }>;
@@ -181,5 +183,5 @@ export interface AssistantRequestResponse {
 
 // Function call response type
 export interface FunctionCallResponse {
-  result: any;
+  result: unknown;
 }

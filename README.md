@@ -9,6 +9,8 @@ An AI-powered medical voice assistant built with Next.js and [Vapi](https://vapi
 - **Call Analytics**: Automatic summaries, transcripts, and recordings
 - **Webhook System**: Server-side event handling for call events
 - **Server-Sent Events (SSE)**: Real-time updates to the frontend
+- **Supabase Data Layering**: Raw turns, recordings, redacted transcript artifacts, and structured summaries
+- **PHI Controls**: RLS, audit logs, redaction, and retention windows by artifact type
 
 ## Tech Stack
 
@@ -17,6 +19,7 @@ An AI-powered medical voice assistant built with Next.js and [Vapi](https://vapi
 - **Styling**: Tailwind CSS v4
 - **Language**: TypeScript
 - **Deployment**: Vercel
+- **Storage/DB**: Supabase (Postgres + Storage)
 
 ## Project Structure
 
@@ -67,6 +70,27 @@ NEXT_PUBLIC_VAPI_BASE_URL=https://api.vapi.ai
 
 # Webhook Configuration (Server-side - Optional)
 # VAPI_WEBHOOK_SECRET=your_webhook_secret
+
+# Supabase
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+SUPABASE_CALL_AUDIO_BUCKET=call-audio
+
+# HIPAA + BAA Guardrails
+HIPAA_READY_MODE=true
+HIPAA_REQUIRED_BAA_VENDORS=supabase,vapi
+SIGNED_BAA_VENDORS=supabase,vapi
+MIRROR_AUDIO_TO_SUPABASE_STORAGE=false
+ALLOW_MONITOR_PHI_STREAM=false
+
+# Retention windows (days): raw < recording <= redacted < summary
+RETENTION_RAW_TURN_DAYS=7
+RETENTION_RECORDING_DAYS=30
+RETENTION_REDACTED_TRANSCRIPT_DAYS=90
+RETENTION_STRUCTURED_SUMMARY_DAYS=365
+
+# Monitor masking behavior
+NEXT_PUBLIC_ALLOW_MONITOR_PHI_VIEW=false
 ```
 
 **Get your Vapi credentials:**
@@ -117,7 +141,22 @@ https://your-ngrok-url.ngrok.io/api/vapi/webhook
 2. Vapi sends webhook events → /api/vapi/webhook
 3. Backend broadcasts events → SSE stream (/api/vapi/events)
 4. Frontend receives updates → Real-time UI update
+5. Webhook persists layered artifacts into Supabase with per-artifact retention and audit logs
 ```
+
+### Supabase Data Layers
+
+- `call_turns_raw`: raw call turns (`speaker`, `uttered_at`, `utterance_text`, `confidence_score`, `tool_call_context`, `raw_payload`)
+- `call_recordings`: recording URL plus optional private storage object reference
+- `call_transcript_artifacts`: redacted transcript artifact for staff view
+- `call_structured_summaries`: intent/outcome/reason codes/next action for fast UI and analytics
+
+### HIPAA + PHI Controls
+
+- Persistence is fail-closed unless `HIPAA_READY_MODE=true` and every vendor in `HIPAA_REQUIRED_BAA_VENDORS` appears in `SIGNED_BAA_VENDORS`.
+- SQL migration enables RLS policies for role-based access, private storage bucket policy, and audit log tables/triggers.
+- Webhook SSE stream sends redacted transcript/summary unless `ALLOW_MONITOR_PHI_STREAM=true`; UI additionally masks unless `NEXT_PUBLIC_ALLOW_MONITOR_PHI_VIEW=true`.
+- Retention is enforced per artifact type via `expires_at` fields plus `purge_expired_call_artifacts()`.
 
 ### Webhook Events
 
@@ -218,6 +257,20 @@ npm start
 
 ```bash
 npx tsc --noEmit
+```
+
+### Apply Supabase Migration
+
+Run the SQL migration in your Supabase SQL editor:
+
+```bash
+supabase/migrations/20260222_transcript_layering_hipaa.sql
+```
+
+Then run periodic cleanup:
+
+```sql
+select * from purge_expired_call_artifacts();
 ```
 
 ### Linting
