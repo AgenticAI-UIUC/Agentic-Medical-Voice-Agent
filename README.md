@@ -1,292 +1,160 @@
-# Agentic Medical Voice Agent
+# Full Stack FastAPI + Next.js
 
-An AI-powered medical voice assistant built with Next.js and [Vapi](https://vapi.ai) for handling patient calls, real-time transcription, and call monitoring.
-
-## Features
-
-- **Voice Assistant Integration**: Powered by Vapi for natural voice conversations
-- **Real-time Call Monitoring**: Live transcription dashboard for ongoing calls
-- **Call Analytics**: Automatic summaries, transcripts, and recordings
-- **Webhook System**: Server-side event handling for call events
-- **Server-Sent Events (SSE)**: Real-time updates to the frontend
+A full-stack web application inspired by the official [fastapi/full-stack-fastapi-template](https://github.com/fastapi/full-stack-fastapi-template), adapted to use **Next.js (App Router)** for the frontend.
 
 ## Tech Stack
 
-- **Framework**: Next.js 16 with App Router
-- **Voice AI**: Vapi Web SDK
-- **Styling**: Tailwind CSS v4
-- **Language**: TypeScript
-- **Deployment**: Vercel
+| Layer    | Technology                                    |
+| -------- | --------------------------------------------- |
+| Backend  | FastAPI, Pydantic, PyJWT, uvicorn             |
+| Frontend | Next.js 16 (App Router), React 19, TypeScript |
+| Styling  | Tailwind CSS v4, shadcn/ui, Radix UI          |
+| Data     | TanStack Query, React Hook Form, Zod          |
+| Voice AI | Vapi (server URL + tool calling)              |
+| Database | Supabase (Postgres)                           |
+| Tooling  | uv (Python), pnpm (Node), Ruff, ESLint        |
 
 ## Project Structure
 
+```text
+agentic-medical-voice-agent/
+├── backend/              # FastAPI API server
+│   ├── app/
+│   │   ├── api/          # Route handlers and dependencies
+│   │   │   └── routes/
+│   │   │       ├── vapi.py            # Vapi webhook events endpoint
+│   │   │       └── vapi_tools/        # Vapi tool-call handlers (one file per tool)
+│   │   │           ├── schedule_appointment.py
+│   │   │           ├── triage_decision.py
+│   │   │           └── _helpers.py    # Shared Vapi payload parsing
+│   │   ├── services/     # Supabase client, Vapi call state
+│   │   ├── core/         # Config, security, logging
+│   │   ├── crud/         # Data access layer (users)
+│   │   ├── models.py     # Pydantic schemas
+│   │   └── main.py       # App entrypoint
+│   └── tests/            # pytest test suite
+├── frontend/             # Next.js client
+│   └── src/
+│       ├── app/          # Pages (App Router)
+│       ├── components/
+│       ├── hooks/        # React Query hooks
+│       └── lib/api/      # Typed API client
+├── .env                  # Backend environment variables
+└── pyrightconfig.json
 ```
-app/
-├── api/
-│   └── vapi/
-│       ├── webhook/         # Receives Vapi webhook events
-│       │   └── route.ts
-│       └── events/          # SSE endpoint for frontend
-│           └── route.ts
-├── components/
-│   ├── CallMonitor.tsx      # Real-time call monitoring UI
-│   ├── VapiButton.tsx       # Voice call button
-│   └── VapiExample.tsx      # Main demo interface
-├── monitor/
-│   └── page.tsx             # Call monitoring page
-├── types/
-│   └── vapi.ts              # TypeScript type definitions
-└── page.tsx                 # Homepage
-```
 
-## Getting Started
+## Prerequisites
 
-### Prerequisites
+- Python 3.12+
+- Node.js 18+ (LTS recommended)
+- [uv](https://docs.astral.sh/uv/) (Python package manager)
+- [pnpm](https://pnpm.io/) (Node package manager)
 
-- Node.js 18+ installed
-- A [Vapi](https://vapi.ai) account
-- (Optional) ngrok for local webhook testing
+## Quick Start
 
-### 1. Clone and Install
+### 1. Clone and configure
 
 ```bash
-git clone <your-repo-url>
-cd Agentic-Medical-Voice-Agent
-npm install
+git clone <repo-url> full-stack-fastapi
+cd full-stack-fastapi
 ```
 
-### 2. Environment Setup
-
-Create a `.env.local` file in the root directory:
+Copy the example environment files:
 
 ```bash
-# Vapi Configuration (Client-side)
-NEXT_PUBLIC_VAPI_PUBLIC_KEY=your_vapi_public_key
-NEXT_PUBLIC_VAPI_ASSISTANT_ID=your_assistant_id
-NEXT_PUBLIC_VAPI_BASE_URL=https://api.vapi.ai
+# Backend (project root)
+cp .env.example .env
 
-# Webhook Configuration (Server-side - Optional)
-# VAPI_WEBHOOK_SECRET=your_webhook_secret
+# Frontend
+cp frontend/.env.local.example frontend/.env.local
 ```
 
-**Get your Vapi credentials:**
-1. Sign up at [vapi.ai](https://vapi.ai)
-2. Create an assistant in the dashboard
-3. Copy your Public Key and Assistant ID
-
-### 3. Run Development Server
+### 2. Start the backend
 
 ```bash
-npm run dev
+cd backend
+uv sync
+uv run uvicorn app.main:app --reload
 ```
-
-Open [http://localhost:3000](http://localhost:3000) to see the app.
-
-### 4. Test Webhooks Locally (Optional)
-
-To receive webhook events during local development:
 
 ```bash
-# In a separate terminal
-ngrok http 3000
+ngrok http 8000
 ```
 
-Copy the ngrok HTTPS URL and configure it in your Vapi dashboard:
-```
-https://your-ngrok-url.ngrok.io/api/vapi/webhook
-```
+The API will be available at **http://localhost:8000**. Swagger docs are at `/api/v1/openapi.json` (local environment only).
 
-## Pages & Routes
-
-### User Interfaces
-
-- `/` - Main page with voice call button
-- `/monitor` - Real-time call monitoring dashboard
-
-### API Routes
-
-- `/api/vapi/webhook` - Receives webhook events from Vapi (POST)
-- `/api/vapi/events` - SSE endpoint for real-time frontend updates (GET)
-
-## How It Works
-
-### Call Flow
-
-```
-1. User initiates call → Vapi handles voice interaction
-2. Vapi sends webhook events → /api/vapi/webhook
-3. Backend broadcasts events → SSE stream (/api/vapi/events)
-4. Frontend receives updates → Real-time UI update
-```
-
-### Webhook Events
-
-The system handles these Vapi webhook events:
-
-- `assistant-request` - Configure assistant per call
-- `status-update` - Call status changes (ringing, in-progress, ended)
-- `transcript` - Real-time speech-to-text updates
-- `function-call` - Execute custom functions during calls
-- `end-of-call-report` - Full call analytics (transcript, recording, summary)
-- `hang` - Call ended
-- `speech-update` - Speech recognition status
-
-### Data You Receive
-
-**During Call:**
-- Real-time text transcripts (both user and assistant)
-- Call status updates
-
-**After Call:**
-- MP3 recording URL
-- Full transcript
-- Call summary
-- Duration and metadata
-
-## Deployment to Vercel
-
-### 1. Push to GitHub
+### 3. Start the frontend
 
 ```bash
-git add .
-git commit -m "Deploy medical voice agent"
-git push origin main
+cd frontend
+pnpm install
+pnpm dev
 ```
 
-### 2. Deploy to Vercel
+The frontend will be available at **http://localhost:3000**.
 
-1. Go to [vercel.com](https://vercel.com) and import your repository
-2. Configure project:
-   - **Framework Preset**: Next.js
-   - **Root Directory**: `./`
-   - **Build Command**: `npm run build`
+## Environment Variables
 
-### 3. Add Environment Variables
+### Backend (`.env` at project root)
 
-In Vercel Dashboard → Settings → Environment Variables, add:
+| Variable                      | Default                 | Description                              |
+| ----------------------------- | ----------------------- | ---------------------------------------- |
+| `PROJECT_NAME`                | `FastAPI App`           | Displayed in OpenAPI docs                |
+| `ENVIRONMENT`                 | `local`                 | `local`, `staging`, or `production`      |
+| `SECRET_KEY`                  | _(random)_              | JWT signing key (must be strong in prod) |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `60`                    | Token lifetime in minutes                |
+| `FRONTEND_HOST`               | `http://localhost:5173` | Added to CORS origins automatically      |
+| `BACKEND_CORS_ORIGINS`        | `[]`                    | JSON array or comma-separated URLs       |
+| `SUPABASE_URL`                | —                       | Supabase project URL                     |
+| `SUPABASE_SERVICE_ROLE_KEY`   | —                       | Supabase service role secret key         |
 
-```
-NEXT_PUBLIC_VAPI_PUBLIC_KEY=your_vapi_public_key
-NEXT_PUBLIC_VAPI_ASSISTANT_ID=your_assistant_id
-NEXT_PUBLIC_VAPI_BASE_URL=https://api.vapi.ai
-```
+### Frontend (`frontend/.env.local`)
 
-Make sure to add for **all environments** (Production, Preview, Development).
+| Variable                   | Default                 | Description             |
+| -------------------------- | ----------------------- | ----------------------- |
+| `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8000` | Backend API base URL    |
+| `NEXT_PUBLIC_APP_NAME`     | `App`                   | Display name (optional) |
 
-### 4. Configure Vapi Webhook
+## Default Accounts (Local Only)
 
-In your Vapi dashboard, set the webhook URL to:
+Seed data is only loaded when `ENVIRONMENT=local`.
 
-```
-https://your-app.vercel.app/api/vapi/webhook
-```
+| Email             | Password      | Role      |
+| ----------------- | ------------- | --------- |
+| admin@example.com | changethis123 | Superuser |
+| alice@example.com | password123   | Regular   |
 
-### 5. Access Your App
-
-- **Homepage**: `https://your-app.vercel.app`
-- **Call Monitor**: `https://your-app.vercel.app/monitor`
-
-## Usage
-
-### Making a Call
-
-1. Open the homepage
-2. Click "Start Call" button
-3. Allow microphone access
-4. Speak naturally with the assistant
-5. Click "End Call" when finished
-
-### Monitoring Calls
-
-1. Open `/monitor` page
-2. The dashboard shows:
-   - Connection status
-   - Live transcripts as they happen
-   - Call summaries after completion
-   - Audio recordings (with playback and download)
-
-## Development
-
-### Build for Production
+## Running Tests
 
 ```bash
-npm run build
-npm start
+# Backend
+cd backend
+uv run pytest
+
+# Frontend
+cd frontend
+pnpm typecheck
+pnpm lint
 ```
 
-### Type Checking
+## Database Schema Bootstrap (Supabase)
+
+To help new contributors reproduce your database structure, this repo includes a bootstrap SQL script:
+
+- `supabase/schema.sql`
+
+You can run it in one of two ways:
 
 ```bash
-npx tsc --noEmit
+# Option 1: Supabase SQL Editor
+# Open supabase/schema.sql, paste into SQL editor, run.
+
+# Option 2: psql
+psql "$SUPABASE_DB_URL" -f supabase/schema.sql
 ```
 
-### Linting
-
-```bash
-npm run lint
-```
-
-## Features Roadmap
-
-Current TODOs (see code comments):
-
-- [ ] Database integration for storing call records
-- [ ] User authentication for monitor page
-- [ ] Webhook signature verification for security
-- [ ] Sentiment analysis on transcripts
-- [ ] Keyword-based alerts
-- [ ] Real-time notifications
-- [ ] Call analytics dashboard
-- [ ] Export call data (CSV, JSON)
-
-## Security Considerations
-
-**Important for Production:**
-
-The webhook endpoint is currently **unprotected**. For production use:
-
-1. Enable webhook signature verification (uncomment in `webhook/route.ts`)
-2. Add authentication to the `/monitor` page
-3. Implement rate limiting
-4. Use HTTPS only
-5. Store sensitive data securely
-
-## Resources
-
-- [Vapi Documentation](https://docs.vapi.ai)
-- [Next.js Documentation](https://nextjs.org/docs)
-- [Tailwind CSS](https://tailwindcss.com/docs)
-- [Vercel Deployment](https://vercel.com/docs)
-
-## Troubleshooting
-
-### "Missing Vapi configuration" Error
-
-Make sure your `.env.local` file has the correct environment variables and restart the dev server.
-
-### Webhook Not Receiving Events
-
-- Check your webhook URL in Vapi dashboard
-- Ensure ngrok is running for local testing
-- Check server logs: `npm run dev`
-- Verify webhook URL is accessible (test with curl)
-
-### Monitor Page Shows 404
-
-- Ensure you've pushed all files to your repository
-- Check Vercel build logs for errors
-- Try redeploying with "Redeploy without cache"
-
-### Frontend Not Updating
-
-- Check browser console for SSE connection errors
-- Verify `/api/vapi/events` endpoint is accessible
-- Check that webhook is broadcasting events
+This script creates all the tables and constraints used by the app, including the circular relationship between `appointments` and `appointment_slots`.
 
 ## License
 
 MIT
-
-## Contributing
-
-Contributions welcome! Please open an issue or submit a pull request.
