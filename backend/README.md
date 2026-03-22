@@ -1,144 +1,183 @@
-# Backend (FastAPI)
+# Medical Voice Agent — Backend
 
-The API server for the full-stack application. Built with FastAPI, Pydantic v2, and PyJWT.
+A FastAPI backend for a voice-based medical appointment scheduler powered by [Vapi.ai](https://vapi.ai) and [Supabase](https://supabase.com).
+
+The system handles patient identification, symptom triage with iterative specialty matching, appointment booking, rescheduling, and cancellation — all through voice conversation.
 
 ## Architecture
 
-```text
-app/
-├── main.py               # FastAPI app, middleware, lifespan
-├── models.py             # Pydantic request/response schemas
-├── api/
-│   ├── main.py           # Router aggregation
-│   ├── deps.py           # Shared dependencies (auth, current user)
-│   └── routes/
-│       ├── login.py      # OAuth2 token endpoints
-│       ├── users.py      # User CRUD (admin + self-service)
-│       ├── vapi.py       # Vapi webhook events (status updates, end-of-call)
-│       ├── vapi_tools/   # Vapi tool-call handlers
-│       │   ├── __init__.py              # Merges sub-routers
-│       │   ├── _helpers.py              # Payload parsing, call metadata extraction
-│       │   ├── schedule_appointment.py  # Appointment scheduling → Supabase
-│       │   └── triage_decision.py       # Symptom triage logic
-│       ├── utils.py      # Health check, debug tools
-│       └── private.py    # Local-only debug endpoints
-├── services/
-│   ├── supabase_client.py # Supabase connection factory
-│   └── vapi_state.py      # In-memory latest-call tracking
-├── core/
-│   ├── config.py         # Settings via pydantic-settings
-│   ├── security.py       # Password hashing, JWT creation/verification
-│   └── logging.py        # Logging configuration
-└── crud/
-    ├── users.py          # User data operations
-    └── seed.py           # Local-only seed data
+```
+Patient calls → Vapi voice agent → Vapi tool calls → This backend → Supabase
 ```
 
-## Key Features
+Vapi manages the voice conversation and LLM orchestration. When the agent needs to take an action (look up a patient, find available slots, book an appointment), it calls one of the tool endpoints exposed by this backend. The backend computes results against Supabase and returns structured responses that the voice agent reads back to the patient.
 
-- **Authentication**: OAuth2 password flow with JWT access tokens
-- **Authorization**: Role-based access (superuser / regular user)
-- **Validation**: Pydantic v2 models with field-level constraints
-- **Password hashing**: Argon2 + Bcrypt via `pwdlib`
-- **Security headers**: X-Content-Type-Options, X-Frame-Options, HSTS (production)
-- **CORS**: Restricted to configured origins with specific methods/headers
-- **OpenAPI**: Auto-generated docs, disabled in production
-- **Structured logging**: Environment-aware request logging
-- **Vapi integration**: Server URL for webhook events + tool-call endpoints
-- **Supabase**: Appointment data persistence via service-role client
+There are no pre-generated appointment slots. Available times are computed on the fly from doctor availability templates, minus existing appointments and one-off blocks. This eliminates the need for any cron jobs or slot generation scripts.
 
-## Requirements
+## Conversation flow
 
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/)
+1. **Identify patient** — Ask if new or returning. New patients are registered with a 9-digit UIN. Returning patients provide their UIN for lookup.
+2. **Check for follow-up** — If this is a follow-up, find the original appointment and skip to scheduling with the same doctor.
+3. **Triage** — Collect symptoms, query the symptom-specialty mapping table, and iteratively narrow down the right specialty (up to 5 rounds of follow-up questions). Patient can override.
+4. **Find slots** — Compute available appointment times for doctors of the matched specialty within the patient's preferred time window.
+5. **Book** — Confirm and insert the appointment. A unique constraint on `(doctor_id, start_at)` prevents double-booking at the database level.
+6. **Reschedule / Cancel** — Patient identifies an existing appointment by doctor name, date, or reason. Rescheduling cancels the old appointment and finds new slots for the same specialty.
+
+## Project structure
+
+```
+backend/
+├── app/
+│   ├── main.py                          # FastAPI app, CORS, lifespan
+│   ├── config.py                        # Settings (Supabase, timezone, etc.)
+│   ├── supabase.py                      # Supabase client singleton
+│   ├── api/
+│   │   ├── vapi_helpers.py              # Parse Vapi tool-call envelopes
+│   │   ├── vapi_webhook.py              # POST /vapi/events (end-of-call transcript saving)
+│   │   ├── vapi_tools/
+│   │   │   ├── identify_patient.py      # Lookup / register patient by UIN
+│   │   │   ├── triage.py               # Symptom → specialty matching loop
+│   │   │   ├── find_slots.py           # Compute available appointment times
+│   │   │   ├── book.py                 # Book an appointment
+│   │   │   ├── reschedule.py           # Find existing appointment + rebook
+│   │   │   └── cancel.py              # Cancel an appointment
+│   │   └── admin/
+│   │       └── routes.py               # Doctor/patient/appointment CRUD (no auth yet)
+│   └── services/
+│       ├── slot_engine.py              # Compute slots from availability - bookings - blocks
+│       ├── triage_engine.py            # Query symptom DB, score specialties
+│       └── time_utils.py              # Timezone handling, NLP date parsing, voice formatting
+├── schema.sql                          # Supabase database schema
+├── pyproject.toml
+├── .env.example
+└── README.md
+```
+
+## API endpoints
+
+### Vapi tool endpoints
+
+All Vapi tool endpoints accept the standard Vapi tool-call payload and return `{"results": [...]}`.
+
+| Method | Path                                  | Purpose                                                |
+| ------ | ------------------------------------- | ------------------------------------------------------ |
+| POST   | `/api/v1/vapi/tools/identify-patient` | Look up patient by UIN                                 |
+| POST   | `/api/v1/vapi/tools/register-patient` | Register new patient, returns 9-digit UIN              |
+| POST   | `/api/v1/vapi/tools/triage`           | Symptoms → specialty matching with follow-up questions |
+| POST   | `/api/v1/vapi/tools/list-specialties` | List all specialties (fallback if triage can't match)  |
+| POST   | `/api/v1/vapi/tools/find-slots`       | Find available times by specialty or specific doctor   |
+| POST   | `/api/v1/vapi/tools/book`             | Book an appointment                                    |
+| POST   | `/api/v1/vapi/tools/find-appointment` | Find a patient's existing appointment                  |
+| POST   | `/api/v1/vapi/tools/reschedule`       | Cancel old + find new slots for same specialty         |
+| POST   | `/api/v1/vapi/tools/cancel`           | Cancel an appointment                                  |
+
+### Vapi webhook
+
+| Method | Path                  | Purpose                                                      |
+| ------ | --------------------- | ------------------------------------------------------------ |
+| POST   | `/api/v1/vapi/events` | Receives Vapi status events; saves transcript on end-of-call |
+
+### Admin endpoints (no auth)
+
+| Method | Path                                     | Purpose                                       |
+| ------ | ---------------------------------------- | --------------------------------------------- |
+| GET    | `/api/v1/admin/doctors`                  | List doctors                                  |
+| POST   | `/api/v1/admin/doctors`                  | Create doctor with specialties + availability |
+| GET    | `/api/v1/admin/doctors/:id/availability` | Get weekly availability                       |
+| PUT    | `/api/v1/admin/doctors/:id/availability` | Replace weekly availability                   |
+| POST   | `/api/v1/admin/doctors/:id/blocks`       | Add time-off block                            |
+| GET    | `/api/v1/admin/doctors/:id/blocks`       | List blocks                                   |
+| DELETE | `/api/v1/admin/doctors/:id/blocks/:bid`  | Remove a block                                |
+| GET    | `/api/v1/admin/patients`                 | List patients                                 |
+| GET    | `/api/v1/admin/patients/:uin`            | Get patient by UIN                            |
+| GET    | `/api/v1/admin/appointments`             | List appointments (filterable by status)      |
+| GET    | `/health`                                | Health check                                  |
 
 ## Setup
 
+### 1. Database
+
+Create a new Supabase project, then run `schema.sql` in the SQL editor. This creates 9 tables:
+
+- `specialties` — medical specialties lookup
+- `symptom_specialty_map` — symptom → specialty mapping with weights and follow-up questions
+- `doctors` — doctor profiles
+- `doctor_specialties` — doctor ↔ specialty links
+- `doctor_availability` — weekly schedule templates (breaks = separate rows)
+- `doctor_blocks` — one-off unavailability (sick days, meetings)
+- `patients` — patient records with 9-digit UIN
+- `appointments` — booked appointments with triage data
+- `conversations` — call transcripts from Vapi
+
+### 2. Environment
+
 ```bash
-cd backend
-uv sync
+cp .env.example .env
+# Fill in your Supabase URL and service role key
 ```
 
-## Running
+### 3. Install and run
 
 ```bash
-# Development (with hot reload)
+# Using uv (recommended)
+uv sync
 uv run uvicorn app.main:app --reload
 
-# The API is served at http://localhost:8000
-# Swagger UI: http://localhost:8000/docs (local only)
+
+
+
+# Or with pip
+pip install -e .
+uvicorn app.main:app --reload
 ```
 
-## Environment
+The API will be available at `http://localhost:8000`. OpenAPI docs at `http://localhost:8000/api/v1/openapi.json` (local environment only).
 
-Configuration is loaded from `../.env` (the project root). See the root README for the full variable reference.
+### 4. Seed data
 
-Key settings:
-
-| Variable                    | Effect                                                |
-| --------------------------- | ----------------------------------------------------- |
-| `ENVIRONMENT`               | `local` enables seed data, debug endpoints, Swagger   |
-| `SECRET_KEY`                | JWT signing — validated for strength in non-local envs |
-| `SUPABASE_URL`              | Supabase project URL                                  |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role secret key                      |
-
-## Testing
+Create a doctor with availability using the admin endpoint:
 
 ```bash
-uv run pytest
+curl -X POST http://localhost:8000/api/v1/admin/doctors \
+  -H "Content-Type: application/json" \
+  -d '{
+    "full_name": "Dr. Sarah Chen",
+    "specialties": ["General Practice", "Internal Medicine"],
+    "availability": [
+      {"day_of_week": 1, "start_time": "09:00", "end_time": "12:00"},
+      {"day_of_week": 1, "start_time": "13:00", "end_time": "17:00"},
+      {"day_of_week": 2, "start_time": "09:00", "end_time": "12:00"},
+      {"day_of_week": 2, "start_time": "13:00", "end_time": "17:00"},
+      {"day_of_week": 3, "start_time": "09:00", "end_time": "12:00"},
+      {"day_of_week": 3, "start_time": "13:00", "end_time": "17:00"},
+      {"day_of_week": 4, "start_time": "09:00", "end_time": "12:00"},
+      {"day_of_week": 4, "start_time": "13:00", "end_time": "17:00"},
+      {"day_of_week": 5, "start_time": "09:00", "end_time": "12:00"},
+      {"day_of_week": 5, "start_time": "13:00", "end_time": "17:00"}
+    ]
+  }'
 ```
 
-Tests use an in-memory data store that resets between test functions via the `auto_reset` fixture.
+Note: `day_of_week` uses Sun=0 through Sat=6. The two rows per day (9–12, 1–5) model the lunch break as a gap.
 
-```bash
-# With verbose output
-uv run pytest -v
+Populate `symptom_specialty_map` in the Supabase dashboard or via SQL inserts to enable the triage flow.
 
-# Single test file
-uv run pytest tests/api/routes/test_users.py
-```
+### 5. Connect Vapi
 
-## Linting
+In your Vapi assistant configuration, add each tool endpoint as a server tool pointing to your deployed backend URL (e.g. `https://your-domain.com/api/v1/vapi/tools/identify-patient`).
 
-```bash
-uv run ruff check .
-uv run ruff format .
-```
+Set the server URL for the events webhook to `https://your-domain.com/api/v1/vapi/events`.
 
-## API Endpoints
+## Design decisions
 
-### Auth
+**Computed slots, not pre-generated.** Available times are calculated on the fly from `doctor_availability` minus booked `appointments` and `doctor_blocks`. No cron jobs, no stale slot data.
 
-| Method | Path                          | Auth | Description            |
-| ------ | ----------------------------- | ---- | ---------------------- |
-| POST   | `/api/v1/login/access-token`  | No   | Get JWT access token   |
-| POST   | `/api/v1/login/test-token`    | Yes  | Verify token is valid  |
+**Breaks as separate availability rows.** Instead of `break_start`/`break_end` columns, a doctor's lunch break is modeled as two availability windows (9–12 and 1–5). Simpler schema, simpler slot engine.
 
-### Users
+**9-digit UIN as patient identifier.** Patients speak this over the phone. It's separate from the internal UUID primary key — easy to say, easy to confirm.
 
-| Method | Path                          | Auth    | Description              |
-| ------ | ----------------------------- | ------- | ------------------------ |
-| GET    | `/api/v1/users/me`            | User    | Get current user profile |
-| PATCH  | `/api/v1/users/me`            | User    | Update own profile       |
-| PATCH  | `/api/v1/users/me/password`   | User    | Change own password      |
-| GET    | `/api/v1/users/`              | Admin   | List all users           |
-| POST   | `/api/v1/users/`              | Admin   | Create user              |
-| GET    | `/api/v1/users/{id}`          | Admin   | Get user by ID           |
-| PATCH  | `/api/v1/users/{id}`          | Admin   | Update user              |
-| DELETE | `/api/v1/users/{id}`          | Admin   | Delete user              |
+**One booking flow.** Every appointment goes through the same path: find slots → book. Rescheduling is cancel + find + book. No competing code paths.
 
-### Vapi
+**Thin routes, service layer.** Vapi tool endpoints just parse the payload and delegate to `services/`. Business logic lives in `slot_engine.py` and `triage_engine.py`.
 
-| Method | Path                                        | Auth | Description                          |
-| ------ | ------------------------------------------- | ---- | ------------------------------------ |
-| POST   | `/api/v1/vapi/events`                       | No   | Webhook receiver for Vapi events     |
-| POST   | `/api/v1/vapi/tools/schedule-appointment`   | No   | Tool: schedule appointment → Supabase|
-| POST   | `/api/v1/vapi/tools/triage-decision`        | No   | Tool: symptom triage                 |
-
-### Utils
-
-| Method | Path                          | Auth | Description              |
-| ------ | ----------------------------- | ---- | ------------------------ |
-| GET    | `/api/v1/utils/health-check`  | No   | Returns `{"status":"ok"}`|
-| GET    | `/api/v1/utils/whoami`        | User | Returns current email    |
-| GET    | `/api/v1/utils/debug-seed`    | No   | Seed data counts (local) |
+**No auth yet.** Admin endpoints are unprotected. Add Supabase Auth or JWT middleware when ready.

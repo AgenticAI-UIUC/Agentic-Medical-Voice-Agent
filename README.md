@@ -14,35 +14,6 @@ A full-stack web application inspired by the official [fastapi/full-stack-fastap
 | Database | Supabase (Postgres)                           |
 | Tooling  | uv (Python), pnpm (Node), Ruff, ESLint        |
 
-## Project Structure
-
-```text
-agentic-medical-voice-agent/
-├── backend/              # FastAPI API server
-│   ├── app/
-│   │   ├── api/          # Route handlers and dependencies
-│   │   │   └── routes/
-│   │   │       ├── vapi.py            # Vapi webhook events endpoint
-│   │   │       └── vapi_tools/        # Vapi tool-call handlers (one file per tool)
-│   │   │           ├── schedule_appointment.py
-│   │   │           ├── triage_decision.py
-│   │   │           └── _helpers.py    # Shared Vapi payload parsing
-│   │   ├── services/     # Supabase client, Vapi call state
-│   │   ├── core/         # Config, security, logging
-│   │   ├── crud/         # Data access layer (users)
-│   │   ├── models.py     # Pydantic schemas
-│   │   └── main.py       # App entrypoint
-│   └── tests/            # pytest test suite
-├── frontend/             # Next.js client
-│   └── src/
-│       ├── app/          # Pages (App Router)
-│       ├── components/
-│       ├── hooks/        # React Query hooks
-│       └── lib/api/      # Typed API client
-├── .env                  # Backend environment variables
-└── pyrightconfig.json
-```
-
 ## Prerequisites
 
 - Python 3.12+
