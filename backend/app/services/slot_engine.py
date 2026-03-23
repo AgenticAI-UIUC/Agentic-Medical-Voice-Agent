@@ -139,36 +139,19 @@ def _generate_theoretical_slots(
     return slots
 
 
-def find_available_slots(
+def _find_slots_in_window(
     doctor_id: str,
-    preferred_day: str,
-    preferred_time: str,
-    max_slots: int = 5,
+    w_start: datetime,
+    w_end: datetime,
+    bucket: Bucket,
+    max_slots: int,
 ) -> list[dict[str, Any]]:
-    """
-    Compute available slots for a doctor given day/time preferences.
-    Returns a list of {start_at, end_at, label} dicts.
-    """
+    """Low-level: find available slots for a doctor within an explicit UTC window."""
     now = now_utc()
-    horizon = now + timedelta(days=settings.SCHEDULING_HORIZON_DAYS)
-
-    day_raw = (preferred_day or "").strip().lower()
-    bucket = parse_time_bucket(preferred_time)
-
-    # Determine UTC search window
-    if day_raw in NEXT_AVAILABLE_ALIASES:
-        w_start, w_end = now, horizon
-    else:
-        dr = parse_preferred_day(preferred_day)
-        w_start, w_end = day_range_to_utc(dr)
-
-    # Clamp to [now, horizon]
     if w_end <= now:
         return []
     if w_start < now:
         w_start = now
-    if w_end > horizon:
-        w_end = horizon
 
     availability = _fetch_availability(doctor_id)
     if not availability:
@@ -176,10 +159,8 @@ def find_available_slots(
 
     booked = _fetch_booked(doctor_id, w_start, w_end)
     blocks = _fetch_blocks(doctor_id, w_start, w_end)
-
     theoretical = _generate_theoretical_slots(availability, w_start, w_end)
 
-    # Filter: not in past, not booked, not blocked, matches bucket
     available = []
     for start, end in theoretical:
         if start < now:
@@ -201,19 +182,15 @@ def find_available_slots(
     return available
 
 
-def find_slots_for_specialty(
+def _find_specialty_slots_in_window(
     specialty_id: str,
-    preferred_day: str,
-    preferred_time: str,
-    max_slots: int = 5,
+    w_start: datetime,
+    w_end: datetime,
+    bucket: Bucket,
+    max_slots: int,
 ) -> list[dict[str, Any]]:
-    """
-    Find available slots across all active doctors with a given specialty.
-    Returns slots with doctor info attached.
-    """
+    """Find slots across all active doctors with a given specialty within an explicit UTC window."""
     sb = get_supabase()
-
-    # Get active doctors with this specialty
     res = (
         sb.table("doctor_specialties")
         .select("doctor_id,doctors(id,full_name,is_active)")
@@ -227,15 +204,123 @@ def find_slots_for_specialty(
         doctor = row.get("doctors")
         if not doctor or not doctor.get("is_active"):
             continue
-        doctor_id = doctor["id"]
-        doctor_name = doctor["full_name"]
+        doc_id = doctor["id"]
+        doc_name = doctor["full_name"]
 
-        slots = find_available_slots(doctor_id, preferred_day, preferred_time, max_slots=max_slots)
+        slots = _find_slots_in_window(doc_id, w_start, w_end, bucket, max_slots=max_slots)
         for s in slots:
-            s["doctor_id"] = doctor_id
-            s["doctor_name"] = doctor_name
+            s["doctor_id"] = doc_id
+            s["doctor_name"] = doc_name
         all_slots.extend(slots)
 
-    # Sort by start time, take top N
     all_slots.sort(key=lambda s: s["start_at"])
     return all_slots[:max_slots]
+
+
+def _parse_window(preferred_day: str) -> tuple[datetime, datetime, bool]:
+    """
+    Parse preferred_day into a UTC (w_start, w_end) and a flag indicating
+    whether it was an open-ended "next available" request.
+    """
+    now = now_utc()
+    horizon = now + timedelta(days=settings.SCHEDULING_HORIZON_DAYS)
+    day_raw = (preferred_day or "").strip().lower()
+
+    if day_raw in NEXT_AVAILABLE_ALIASES:
+        return now, horizon, True
+
+    dr = parse_preferred_day(preferred_day)
+    w_start, w_end = day_range_to_utc(dr)
+    if w_end > horizon:
+        w_end = horizon
+    return w_start, w_end, False
+
+
+def find_available_slots(
+    doctor_id: str,
+    preferred_day: str,
+    preferred_time: str,
+    max_slots: int = 5,
+) -> list[dict[str, Any]]:
+    """
+    Compute available slots for a doctor given day/time preferences.
+    Returns a list of {start_at, end_at, label} dicts.
+    """
+    bucket = parse_time_bucket(preferred_time)
+    w_start, w_end, _ = _parse_window(preferred_day)
+    return _find_slots_in_window(doctor_id, w_start, w_end, bucket, max_slots)
+
+
+def find_slots_for_specialty(
+    specialty_id: str,
+    preferred_day: str,
+    preferred_time: str,
+    max_slots: int = 5,
+) -> list[dict[str, Any]]:
+    """
+    Find available slots across all active doctors with a given specialty.
+    Returns slots with doctor info attached.
+    """
+    bucket = parse_time_bucket(preferred_time)
+    w_start, w_end, _ = _parse_window(preferred_day)
+    return _find_specialty_slots_in_window(specialty_id, w_start, w_end, bucket, max_slots)
+
+
+def find_slots_with_extension(
+    *,
+    specialty_id: str | None = None,
+    doctor_id: str | None = None,
+    preferred_day: str,
+    preferred_time: str,
+    max_slots: int = 5,
+) -> dict[str, Any]:
+    """
+    Find slots, extending the search window by ±1× the requested duration if
+    nothing is found in the originally requested range.
+
+    Returns {"slots": [...], "window_note": str | None}.
+    window_note is non-None when results come from an extended window and
+    contains a human-readable explanation for the voice agent to relay.
+    """
+    now = now_utc()
+    horizon = now + timedelta(days=settings.SCHEDULING_HORIZON_DAYS)
+    bucket = parse_time_bucket(preferred_time)
+    w_start, w_end, is_open_ended = _parse_window(preferred_day)
+
+    def _get_slots(ws: datetime, we: datetime) -> list[dict[str, Any]]:
+        if specialty_id:
+            return _find_specialty_slots_in_window(specialty_id, ws, we, bucket, max_slots)
+        if doctor_id:
+            slots = _find_slots_in_window(doctor_id, ws, we, bucket, max_slots)
+            for s in slots:
+                s["doctor_id"] = doctor_id
+            return slots
+        return []
+
+    # Try original window first
+    slots = _get_slots(w_start, w_end)
+    if slots or is_open_ended:
+        return {"slots": slots, "window_note": None}
+
+    # No slots found — extend by ±1× the window duration, clamped to [now, horizon]
+    window_duration = w_end - w_start
+
+    fwd_start = w_end
+    fwd_end = min(w_end + window_duration, horizon)
+    bwd_end = w_start
+    bwd_start = max(now, w_start - window_duration)
+
+    forward_slots = _get_slots(fwd_start, fwd_end) if fwd_end > fwd_start else []
+    backward_slots = _get_slots(bwd_start, bwd_end) if bwd_end > bwd_start else []
+
+    extended = sorted(backward_slots + forward_slots, key=lambda s: s["start_at"])[:max_slots]
+    if not extended:
+        return {"slots": [], "window_note": None}
+
+    return {
+        "slots": extended,
+        "window_note": (
+            "No times were available in your requested window. "
+            "Here are the closest available times I found"
+        ),
+    }

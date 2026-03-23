@@ -34,6 +34,8 @@ def _handle_book(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any
     if start_dt >= end_dt:
         return {"status": "INVALID", "message": "The appointment end time must be after the start time."}
 
+    cancel_appointment_id = args.get("cancel_appointment_id")
+
     sb = get_supabase()
     vapi_call_id = get_call_id(payload)
 
@@ -75,6 +77,21 @@ def _handle_book(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any
 
     appointment = ins[0]
     when = format_for_voice(start_dt)
+
+    # If rescheduling, cancel the original appointment now that the new one is confirmed
+    if cancel_appointment_id:
+        sb.table("appointments").update({"status": "CANCELLED"}).eq(
+            "id", cancel_appointment_id
+        ).eq("status", "CONFIRMED").execute()
+        return {
+            "status": "CONFIRMED",
+            "appointment_id": appointment["id"],
+            "doctor_name": doctor_name,
+            "message": (
+                f"All set — your previous appointment has been cancelled and "
+                f"you're rebooked with {doctor_name} for {when}."
+            ),
+        }
 
     return {
         "status": "CONFIRMED",

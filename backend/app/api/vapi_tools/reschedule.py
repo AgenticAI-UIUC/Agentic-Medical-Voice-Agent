@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 
 from app.api.vapi_helpers import handle_tool_calls
-from app.services.slot_engine import find_slots_for_specialty
+from app.services.slot_engine import find_slots_with_extension
 from app.supabase import get_supabase
 
 router = APIRouter()
@@ -123,13 +123,14 @@ def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
     doctor_id = appt["doctor_id"]
 
     # Find new slots — prefer same specialty, fall back to same doctor
-    if specialty_id:
-        slots = find_slots_for_specialty(specialty_id, preferred_day, preferred_time)
-    else:
-        from app.services.slot_engine import find_available_slots
-        slots = find_available_slots(doctor_id, preferred_day, preferred_time)
-        for s in slots:
-            s["doctor_id"] = doctor_id
+    result = find_slots_with_extension(
+        specialty_id=specialty_id or None,
+        doctor_id=None if specialty_id else doctor_id,
+        preferred_day=preferred_day,
+        preferred_time=preferred_time,
+    )
+    slots = result["slots"]
+    window_note = result["window_note"]
 
     if not slots:
         return {
@@ -139,13 +140,22 @@ def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
             "slots": [],
         }
 
-    labels = [s["label"] for s in slots[:3]]
+    if specialty_id:
+        labels = [f"{s['label']} with {s['doctor_name']}" for s in slots[:3]]
+    else:
+        labels = [s["label"] for s in slots[:3]]
     spoken = labels[0] if len(labels) == 1 else ", ".join(labels[:-1]) + " or " + labels[-1]
+
+    if window_note:
+        message = f"{window_note}: {spoken}. Which one works?"
+    else:
+        message = f"I can reschedule you to {spoken}. Which one works?"
+
     return {
         "status": "SLOTS_AVAILABLE",
         "original_appointment_id": appointment_id,
         "slots": slots,
-        "message": f"I can reschedule you to {spoken}. Which one works?",
+        "message": message,
     }
 
 
