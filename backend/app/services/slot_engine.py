@@ -6,7 +6,6 @@ from zoneinfo import ZoneInfo
 
 from app.config import settings
 from app.services.time_utils import (
-    DayRange,
     day_range_to_utc,
     is_in_bucket,
     now_utc,
@@ -97,9 +96,6 @@ def _generate_theoretical_slots(
     for row in availability:
         dow = row["day_of_week"]
         by_dow.setdefault(dow, []).append(row)
-
-    current = start_date_utc.date() if hasattr(start_date_utc, "date") else start_date_utc
-    end_d = end_date_utc.date() if hasattr(end_date_utc, "date") else end_date_utc
 
     # Iterate day by day
     d = start_date_utc.astimezone(timezone.utc).date() if isinstance(start_date_utc, datetime) else start_date_utc

@@ -78,7 +78,12 @@ def _handle_book(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any
     appointment = ins[0]
     when = format_for_voice(start_dt)
 
-    # If rescheduling, cancel the original appointment now that the new one is confirmed
+    # If rescheduling, cancel the original appointment now that the new one is confirmed.
+    # The double filter (.eq("status", "CONFIRMED")) makes the update a no-op if the
+    # appointment was already cancelled, so it is safe to retry.  Note: there is no
+    # database-level transaction here — if this update call fails the new appointment
+    # will still exist.  This is an acceptable trade-off for this first iteration; a
+    # future improvement could use a Postgres function/RPC to do both atomically.
     if cancel_appointment_id:
         sb.table("appointments").update({"status": "CANCELLED"}).eq(
             "id", cancel_appointment_id
