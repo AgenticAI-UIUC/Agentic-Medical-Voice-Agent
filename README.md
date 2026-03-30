@@ -166,27 +166,27 @@ The admin dashboard will be available at **http://localhost:3000**.
 
 ### Vapi Tool Endpoints
 
-| Method | Path                                    | Description                       |
-| ------ | --------------------------------------- | --------------------------------- |
-| POST   | `/api/v1/vapi/tools/identify-patient`   | Patient lookup / registration     |
-| POST   | `/api/v1/vapi/tools/triage`             | Symptom → specialty matching      |
-| POST   | `/api/v1/vapi/tools/find-slots`         | Compute available appointment slots |
-| POST   | `/api/v1/vapi/tools/book`               | Book an appointment               |
-| POST   | `/api/v1/vapi/tools/reschedule`         | Reschedule an existing appointment |
-| POST   | `/api/v1/vapi/tools/cancel`             | Cancel an appointment             |
-| POST   | `/api/v1/vapi/tools/list-specialties`   | List all specialties (fallback)   |
-| POST   | `/api/v1/vapi/events`                   | Webhook for call lifecycle events |
+| Method | Path                                  | Description                         |
+| ------ | ------------------------------------- | ----------------------------------- |
+| POST   | `/api/v1/vapi/tools/identify-patient` | Patient lookup / registration       |
+| POST   | `/api/v1/vapi/tools/triage`           | Symptom → specialty matching        |
+| POST   | `/api/v1/vapi/tools/find-slots`       | Compute available appointment slots |
+| POST   | `/api/v1/vapi/tools/book`             | Book an appointment                 |
+| POST   | `/api/v1/vapi/tools/reschedule`       | Reschedule an existing appointment  |
+| POST   | `/api/v1/vapi/tools/cancel`           | Cancel an appointment               |
+| POST   | `/api/v1/vapi/tools/list-specialties` | List all specialties (fallback)     |
+| POST   | `/api/v1/vapi/events`                 | Webhook for call lifecycle events   |
 
 ### Admin Endpoints
 
-| Method     | Path                                      | Description                  |
-| ---------- | ----------------------------------------- | ---------------------------- |
-| GET/POST   | `/api/v1/admin/doctors`                   | List / create doctors        |
-| GET/PUT    | `/api/v1/admin/doctors/:id/availability`  | Manage weekly schedules      |
-| POST/GET/DELETE | `/api/v1/admin/doctors/:id/blocks`   | Manage time-off blocks       |
-| GET        | `/api/v1/admin/patients`                  | List / search patients       |
-| GET        | `/api/v1/admin/appointments`              | List appointments (filterable) |
-| GET        | `/health`                                 | Health check                 |
+| Method          | Path                                     | Description                    |
+| --------------- | ---------------------------------------- | ------------------------------ |
+| GET/POST        | `/api/v1/admin/doctors`                  | List / create doctors          |
+| GET/PUT         | `/api/v1/admin/doctors/:id/availability` | Manage weekly schedules        |
+| POST/GET/DELETE | `/api/v1/admin/doctors/:id/blocks`       | Manage time-off blocks         |
+| GET             | `/api/v1/admin/patients`                 | List / search patients         |
+| GET             | `/api/v1/admin/appointments`             | List appointments (filterable) |
+| GET             | `/health`                                | Health check                   |
 
 ## Database Schema
 

@@ -1,18 +1,29 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Request
 
-from app.api.vapi_helpers import handle_tool_calls
-from app.services.slot_engine import find_slots_for_specialty
+from app.api.vapi_helpers import get_call_id, handle_tool_calls
+from app.services.slot_engine import (
+    find_available_slots,
+    find_slots_for_specialty,
+    validate_slot,
+    _check_overlap,
+)
+from app.services.time_utils import format_for_voice, now_utc
 from app.supabase import get_supabase
 
 router = APIRouter()
 
 
 def _handle_find_appointment(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
-    """Find a patient's existing appointment for rescheduling or cancellation."""
+    """Find a patient's existing appointment for rescheduling or cancellation.
+
+    SAFETY: Only returns future confirmed appointments so the caller cannot
+    be told a past appointment is "upcoming".
+    """
     patient_id = args.get("patient_id")
     if not patient_id:
         return {"status": "INVALID", "message": "I need your patient information first."}
@@ -21,13 +32,17 @@ def _handle_find_appointment(args: dict[str, Any], payload: dict[str, Any]) -> d
     reason = (args.get("reason") or "").strip().lower()
 
     sb = get_supabase()
+    now = now_utc()
 
+    # SAFETY-CRITICAL: Filter to future appointments only.
+    # Without this, past appointments could be presented as "upcoming".
     query = (
         sb.table("appointments")
         .select("id,doctor_id,specialty_id,start_at,end_at,reason,symptoms,status,doctors(full_name)")
         .eq("patient_id", patient_id)
         .eq("status", "CONFIRMED")
-        .order("start_at", desc=True)
+        .gt("start_at", now.isoformat())
+        .order("start_at", desc=False)
         .limit(10)
     )
 
@@ -93,7 +108,12 @@ def _handle_find_appointment(args: dict[str, Any], payload: dict[str, Any]) -> d
 
 
 def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
-    """Cancel old appointment and find new slots for same specialty."""
+    """Find new slots for rescheduling (does NOT cancel the original appointment).
+
+    This is step 1 of the reschedule flow: discover alternative slots.
+    The original appointment remains untouched until the patient picks a
+    new slot and reschedule_finalize is called.
+    """
     appointment_id = args.get("appointment_id")
     preferred_day = args.get("preferred_day", "")
     preferred_time = args.get("preferred_time", "")
@@ -106,7 +126,7 @@ def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
     # Fetch the original appointment
     res = (
         sb.table("appointments")
-        .select("id,specialty_id,doctor_id,status")
+        .select("id,specialty_id,doctor_id,status,start_at")
         .eq("id", appointment_id)
         .limit(1)
         .execute()
@@ -119,6 +139,11 @@ def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
     if appt["status"] != "CONFIRMED":
         return {"status": "INVALID", "message": "That appointment isn't active and can't be rescheduled."}
 
+    # SAFETY: Verify the appointment is in the future
+    start_str = appt["start_at"].replace("Z", "+00:00")
+    if datetime.fromisoformat(start_str) <= now_utc():
+        return {"status": "INVALID", "message": "That appointment is in the past and can't be rescheduled."}
+
     specialty_id = appt.get("specialty_id")
     doctor_id = appt["doctor_id"]
 
@@ -126,7 +151,6 @@ def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
     if specialty_id:
         slots = find_slots_for_specialty(specialty_id, preferred_day, preferred_time)
     else:
-        from app.services.slot_engine import find_available_slots
         slots = find_available_slots(doctor_id, preferred_day, preferred_time)
         for s in slots:
             s["doctor_id"] = doctor_id
@@ -149,6 +173,152 @@ def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
     }
 
 
+def _handle_reschedule_finalize(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    """
+    SAFETY-CRITICAL: Atomic-style reschedule finalization.
+
+    Takes the original appointment ID and the selected new slot, then:
+      1. Validates the original appointment is still active and reschedulable
+      2. Validates the new slot is genuinely available (via slot engine)
+      3. Creates the new appointment
+      4. Cancels the original appointment
+      5. Returns a single status response
+
+    The original appointment is NEVER cancelled before the new one is secured.
+    If the new booking succeeds but cancellation of the old one fails, a
+    RESCHEDULE_PARTIAL_FAILURE status is returned so the caller can surface it.
+    """
+    original_appointment_id = args.get("original_appointment_id") or args.get("appointment_id")
+    patient_id = args.get("patient_id")
+    doctor_id = args.get("doctor_id")
+    start_at = args.get("start_at")
+    end_at = args.get("end_at")
+
+    if not all([original_appointment_id, patient_id, doctor_id, start_at, end_at]):
+        return {"status": "INVALID", "message": "Missing required reschedule information."}
+
+    assert isinstance(start_at, str) and isinstance(end_at, str)
+
+    # Parse new slot times
+    try:
+        new_start = datetime.fromisoformat(start_at.replace("Z", "+00:00"))
+        new_end = datetime.fromisoformat(end_at.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return {"status": "INVALID", "message": "Could not understand the new appointment times."}
+
+    if new_start >= new_end:
+        return {"status": "INVALID", "message": "The new appointment end time must be after the start time."}
+
+    sb = get_supabase()
+
+    # -- Step 1: Validate original appointment is still reschedulable --
+    orig_res = (
+        sb.table("appointments")
+        .select("id,status,start_at,specialty_id,reason,symptoms,severity_description,severity_rating,urgency")
+        .eq("id", original_appointment_id)
+        .limit(1)
+        .execute()
+    )
+    orig_data = getattr(orig_res, "data", None) or []
+    if not orig_data:
+        return {"status": "NOT_FOUND", "message": "I couldn't find the original appointment."}
+
+    orig_appt = orig_data[0]
+    if orig_appt["status"] != "CONFIRMED":
+        return {"status": "INVALID", "message": "The original appointment is no longer active."}
+
+    orig_start_str = orig_appt["start_at"].replace("Z", "+00:00")
+    if datetime.fromisoformat(orig_start_str) <= now_utc():
+        return {"status": "INVALID", "message": "The original appointment is in the past."}
+
+    # -- Step 2: Validate the new slot is genuinely available --
+    # Exclude the original appointment from overlap checks since we intend to cancel it
+    slot_rejection = validate_slot(str(doctor_id), str(start_at), str(end_at))
+    if slot_rejection is not None:
+        # Check if the only "overlap" is the original appointment itself
+        # (edge case: rescheduling to the same doctor at a nearby time)
+        if slot_rejection.get("status") == "TAKEN":
+            # Re-check excluding the original appointment
+            if not _check_overlap(str(doctor_id), new_start, new_end, exclude_appointment_id=str(original_appointment_id)):
+                slot_rejection = None  # The only conflict was the original appointment itself
+        if slot_rejection is not None:
+            return slot_rejection
+
+    vapi_call_id = get_call_id(payload)
+
+    # -- Step 3: Create the new appointment FIRST (before cancelling the old one) --
+    new_row: dict[str, Any] = {
+        "patient_id": patient_id,
+        "doctor_id": doctor_id,
+        "start_at": start_at,
+        "end_at": end_at,
+        "specialty_id": args.get("specialty_id") or orig_appt.get("specialty_id"),
+        "reason": args.get("reason") or orig_appt.get("reason"),
+        "symptoms": orig_appt.get("symptoms"),
+        "severity_description": orig_appt.get("severity_description"),
+        "severity_rating": orig_appt.get("severity_rating"),
+        "urgency": orig_appt.get("urgency", "ROUTINE"),
+        "follow_up_from_id": None,
+        "status": "CONFIRMED",
+        "vapi_call_id": vapi_call_id,
+    }
+
+    try:
+        insert_res = sb.table("appointments").insert(new_row).execute()
+    except Exception as e:
+        err_msg = str(e)
+        if "unique_doctor_appointment" in err_msg or "no_overlapping_confirmed" in err_msg:
+            return {
+                "status": "TAKEN",
+                "message": "Sorry, that time was just booked by someone else. Please pick another slot.",
+            }
+        return {"status": "ERROR", "message": f"Failed to create the new appointment: {err_msg}"}
+
+    ins = getattr(insert_res, "data", None) or []
+    if not ins:
+        return {"status": "ERROR", "message": "Something went wrong creating the new appointment."}
+
+    new_appointment = ins[0]
+
+    # -- Step 4: Cancel the original appointment ONLY after new one is confirmed --
+    try:
+        sb.table("appointments").update({"status": "CANCELLED"}).eq("id", original_appointment_id).execute()
+    except Exception as cancel_err:
+        # SAFETY: New appointment was created but old one could not be cancelled.
+        # Return a clear partial-failure status so the caller/UI can surface it.
+        doc_res = sb.table("doctors").select("full_name").eq("id", doctor_id).limit(1).execute()
+        doc_data = getattr(doc_res, "data", None) or []
+        doctor_name = doc_data[0]["full_name"] if doc_data else "your doctor"
+
+        return {
+            "status": "RESCHEDULE_PARTIAL_FAILURE",
+            "new_appointment_id": new_appointment["id"],
+            "original_appointment_id": original_appointment_id,
+            "doctor_name": doctor_name,
+            "message": (
+                f"Your new appointment with {doctor_name} for "
+                f"{format_for_voice(new_start)} is confirmed, but I wasn't able to "
+                f"cancel your original appointment automatically. Please contact the "
+                f"office to have the old appointment removed."
+            ),
+            "error_detail": str(cancel_err),
+        }
+
+    # -- Step 5: Success —  return unified response --
+    doc_res = sb.table("doctors").select("full_name").eq("id", doctor_id).limit(1).execute()
+    doc_data = getattr(doc_res, "data", None) or []
+    doctor_name = doc_data[0]["full_name"] if doc_data else "your doctor"
+    when = format_for_voice(new_start)
+
+    return {
+        "status": "RESCHEDULED",
+        "new_appointment_id": new_appointment["id"],
+        "cancelled_appointment_id": original_appointment_id,
+        "doctor_name": doctor_name,
+        "message": f"Done — your appointment has been rescheduled to {when} with {doctor_name}.",
+    }
+
+
 @router.post("/find-appointment")
 async def find_appointment(request: Request):
     payload = await request.json()
@@ -159,3 +329,10 @@ async def find_appointment(request: Request):
 async def reschedule(request: Request):
     payload = await request.json()
     return handle_tool_calls(payload, _handle_reschedule)
+
+
+@router.post("/reschedule-finalize")
+async def reschedule_finalize(request: Request):
+    """Atomic-style reschedule: book new slot + cancel old appointment in one call."""
+    payload = await request.json()
+    return handle_tool_calls(payload, _handle_reschedule_finalize)

@@ -141,6 +141,28 @@ CREATE TABLE public.appointments (
 );
 
 -- ============================================================
+-- 5b. Exclusion constraint: prevent overlapping confirmed appointments
+-- ============================================================
+
+-- Required for GiST-based exclusion constraints on non-geometric types.
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
+-- SAFETY-CRITICAL: Prevent any two active (non-cancelled) appointments for the
+-- same doctor from overlapping in time. The simple UNIQUE on (doctor_id, start_at)
+-- is insufficient because two appointments with different start times can still
+-- overlap (e.g. 9:00–10:00 and 9:30–10:30).
+--
+-- This exclusion constraint uses a partial index scoped to active statuses only,
+-- so cancelled/completed/no-show appointments do not block future bookings.
+ALTER TABLE public.appointments
+  ADD CONSTRAINT no_overlapping_confirmed
+  EXCLUDE USING gist (
+    doctor_id WITH =,
+    tstzrange(start_at, end_at) WITH &&
+  )
+  WHERE (status NOT IN ('CANCELLED'));
+
+-- ============================================================
 -- 6. Indexes
 -- ============================================================
 
