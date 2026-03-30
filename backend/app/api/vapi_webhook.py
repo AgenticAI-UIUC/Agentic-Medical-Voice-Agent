@@ -8,25 +8,17 @@ This router saves that transcript to the conversations table and links it to the
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 
-from app.config import settings
+from app.api.vapi_auth import verify_vapi_secret
 from app.supabase import get_supabase
 
 
 router = APIRouter(prefix="/vapi", tags=["vapi"])
 
-def _verify_secret(request: Request) -> None:
-    if not settings.VAPI_WEBHOOK_SECRET:
-        return
-    token = request.headers.get("x-vapi-secret")
-    if token != settings.VAPI_WEBHOOK_SECRET:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    
 
-@router.post("/events")
+@router.post("/events", dependencies=[Depends(verify_vapi_secret)])
 async def vapi_events(request: Request):
-    _verify_secret(request)
     payload = await request.json()
 
     msg = payload.get("message") or {}

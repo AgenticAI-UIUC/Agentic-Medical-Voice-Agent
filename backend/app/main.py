@@ -12,9 +12,16 @@ from app.config import settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print(f"Starting {settings.PROJECT_NAME} ({settings.ENVIRONMENT})")
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("Starting %s (%s)", settings.PROJECT_NAME, settings.ENVIRONMENT)
+    if not settings.VAPI_WEBHOOK_SECRET and not settings.is_local:
+        logger.warning(
+            "VAPI_WEBHOOK_SECRET is not set — all VAPI endpoints are unauthenticated. "
+            "Set this in production to prevent unauthorized access."
+        )
     yield
-    print("Shutting down")
+    logger.info("Shutting down")
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

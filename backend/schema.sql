@@ -88,7 +88,7 @@ CREATE TABLE public.patients (
   email      text,
   allergies  text,
   created_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT phone_digits_only CHECK (phone ~ '^\d{10,15}$'),
+  CONSTRAINT phone_digits_only CHECK (phone ~ '^\d+$'),
   CONSTRAINT uin_format CHECK (uin ~ '^\d{9}$')
 );
 

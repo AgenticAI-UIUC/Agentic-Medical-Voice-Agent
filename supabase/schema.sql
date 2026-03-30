@@ -75,7 +75,7 @@ CREATE TABLE public.patients (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   uin text NOT NULL UNIQUE,
   full_name text NOT NULL,
-  phone text NOT NULL UNIQUE CHECK (phone ~ '^\d{10,15}$'::text),
+  phone text NOT NULL UNIQUE CHECK (phone ~ '^\d+$'::text),
   email text,
   allergies text,
   created_at timestamp with time zone NOT NULL DEFAULT now(),

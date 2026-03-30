@@ -32,6 +32,11 @@ def _lookup_patient(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, 
     uin = _normalize_uin(args.get("uin") or "")
     if not uin:
         return {"status": "INVALID", "message": "I didn't catch your UIN. Could you repeat it?"}
+    if len(uin) != 9 or not uin.isdigit():
+        return {
+            "status": "INVALID",
+            "message": "The UIN should be exactly 9 digits. Could you try again?",
+        }
 
     sb = get_supabase()
     res = sb.table("patients").select("id,uin,full_name,phone,email,allergies").eq("uin", uin).limit(1).execute()
@@ -67,8 +72,8 @@ def _register_patient(args: dict[str, Any], payload: dict[str, Any]) -> dict[str
         return {"status": "INVALID", "message": "I need your 9-digit university UIN to register you."}
     if not full_name:
         return {"status": "INVALID", "message": "I need your full name to register you."}
-    if not phone or len(phone) < 10:
-        return {"status": "INVALID", "message": "I need a valid phone number to register you."}
+    if not phone:
+        return {"status": "INVALID", "message": "I need a phone number to register you."}
 
     sb = get_supabase()
 
@@ -85,17 +90,17 @@ def _register_patient(args: dict[str, Any], payload: dict[str, Any]) -> dict[str
             "message": f"It looks like you're already registered as {p['full_name']}.",
         }
 
-    # Check if phone already exists
-    existing_phone = sb.table("patients").select("id,uin,full_name").eq("phone", phone).limit(1).execute()
+    # Phone numbers must be unique, but they must never be used to identify
+    # or disclose another patient's identity during registration.
+    existing_phone = sb.table("patients").select("id").eq("phone", phone).limit(1).execute()
     existing_phone_data = getattr(existing_phone, "data", None) or []
     if existing_phone_data:
-        p = existing_phone_data[0]
         return {
-            "status": "ALREADY_EXISTS",
-            "patient_id": p["id"],
-            "uin": p["uin"],
-            "full_name": p["full_name"],
-            "message": f"That phone number is already registered under {p['full_name']}.",
+            "status": "INVALID",
+            "message": (
+                "That phone number is already associated with a patient record. "
+                "Please provide a different phone number or double-check the number and try again."
+            ),
         }
 
     row = {
@@ -117,7 +122,7 @@ def _register_patient(args: dict[str, Any], payload: dict[str, Any]) -> dict[str
         "patient_id": patient["id"],
         "uin": uin,
         "full_name": full_name,
-        "message": f"You're all set, {full_name}. You've been registered successfully.",
+        "message": f"You're all set, {full_name}.",
     }
 
 

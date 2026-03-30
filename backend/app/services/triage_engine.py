@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 from typing import Any
 
 from app.supabase import get_supabase
@@ -16,6 +17,60 @@ class TriageResult:
     top_candidates: list[dict[str, Any]] = field(default_factory=list)
 
 
+_AFFIRMATIVE_ANSWERS = {
+    "yes", "yeah", "yep", "y", "i do", "it does", "they do", "sometimes",
+    "often", "usually", "all the time",
+}
+
+_NEGATIVE_ANSWERS = {
+    "no", "nope", "nah", "n", "i dont", "i do not", "it doesnt",
+    "it does not", "they dont", "they do not", "never", "not really",
+}
+
+
+def _normalize_text(value: str) -> str:
+    cleaned = (value or "").strip().lower().replace("'", "")
+    cleaned = re.sub(r"[^\w\s]", " ", cleaned)
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def _dedupe_terms(terms: list[str]) -> list[str]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for term in terms:
+        normalized = _normalize_text(term)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped
+
+
+def _normalize_answers(answers: dict[str, str] | None) -> dict[str, str]:
+    normalized_answers: dict[str, str] = {}
+    if not isinstance(answers, dict):
+        return normalized_answers
+
+    for question, answer in answers.items():
+        normalized_question = _normalize_text(str(question))
+        normalized_answer = _normalize_text(str(answer))
+        if normalized_question and normalized_answer:
+            normalized_answers[normalized_question] = normalized_answer
+
+    return normalized_answers
+
+
+def _answer_signal(answer: str) -> float:
+    normalized = _normalize_text(answer)
+    if not normalized:
+        return 0.0
+    if normalized in _AFFIRMATIVE_ANSWERS or normalized.startswith("yes "):
+        return 1.0
+    if normalized in _NEGATIVE_ANSWERS or normalized.startswith("no "):
+        return -0.75
+    return 0.25
+
+
 def triage_symptoms(
     symptoms: list[str],
     answers: dict[str, str] | None = None,
@@ -28,7 +83,7 @@ def triage_symptoms(
 
     Args:
         symptoms: List of symptom strings from the patient.
-        answers: Previous follow-up answers (for context, not yet used in scoring).
+        answers: Previous follow-up answers keyed by the question asked.
         confidence_threshold: Minimum confidence to consider specialty determined.
     """
     if not symptoms:
@@ -38,11 +93,20 @@ def triage_symptoms(
         )
 
     sb = get_supabase()
+    normalized_answers = _normalize_answers(answers)
+
+    # Follow-up answers can add symptom detail such as "itching" or "dry cough".
+    extra_terms = [
+        answer
+        for answer in normalized_answers.values()
+        if _answer_signal(answer) == 0.25 and len(answer) >= 4
+    ]
+    query_terms = _dedupe_terms([*symptoms, *extra_terms])
 
     # Query all matching symptom rows
     # Use ilike for case-insensitive partial matching
     all_rows: list[dict[str, Any]] = []
-    for symptom in symptoms:
+    for symptom in query_terms:
         res = (
             sb.table("symptom_specialty_map")
             .select("symptom,specialty_id,weight,follow_up_questions,specialties(id,name)")
@@ -78,6 +142,20 @@ def triage_symptoms(
         fq = row.get("follow_up_questions")
         if fq and isinstance(fq, list):
             questions.setdefault(sid, []).extend(fq)
+            for question in fq:
+                answer = normalized_answers.get(_normalize_text(str(question)))
+                if answer:
+                    # A follow-up answer nudges the specialty that asked it.
+                    scores[sid] = scores.get(sid, 0.0) + (w * 0.5 * _answer_signal(answer))
+
+    scores = {sid: score for sid, score in scores.items() if score > 0}
+    if not scores:
+        return TriageResult(
+            specialty_determined=False,
+            follow_up_questions=[
+                "I need a bit more information to match you with the right specialist."
+            ],
+        )
 
     # Normalize scores
     total = sum(scores.values()) or 1.0
@@ -102,8 +180,13 @@ def triage_symptoms(
 
     # Not confident — gather follow-up questions from top candidates
     follow_ups: list[str] = []
+    seen_questions: set[str] = set()
     for sid, _ in ranked[:2]:
-        follow_ups.extend(questions.get(sid, []))
+        for question in questions.get(sid, []):
+            normalized_question = _normalize_text(str(question))
+            if normalized_question and normalized_question not in seen_questions:
+                seen_questions.add(normalized_question)
+                follow_ups.append(question)
 
     if not follow_ups:
         follow_ups = [

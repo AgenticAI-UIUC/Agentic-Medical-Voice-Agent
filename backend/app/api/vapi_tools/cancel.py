@@ -12,6 +12,7 @@ router = APIRouter()
 
 def _handle_cancel(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     appointment_id = args.get("appointment_id")
+    patient_id = args.get("patient_id")
     if not appointment_id:
         return {"status": "INVALID", "message": "I need to know which appointment to cancel."}
 
@@ -20,7 +21,7 @@ def _handle_cancel(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
     # Verify it exists and is active
     res = (
         sb.table("appointments")
-        .select("id,status,doctors(full_name)")
+        .select("id,patient_id,status,doctors(full_name)")
         .eq("id", appointment_id)
         .limit(1)
         .execute()
@@ -30,6 +31,11 @@ def _handle_cancel(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
         return {"status": "NOT_FOUND", "message": "I couldn't find that appointment."}
 
     appt = data[0]
+
+    # SECURITY: Verify the appointment belongs to the requesting patient
+    if patient_id and appt.get("patient_id") and appt["patient_id"] != patient_id:
+        return {"status": "NOT_FOUND", "message": "I couldn't find that appointment."}
+
     if appt["status"] != "CONFIRMED":
         return {"status": "INVALID", "message": "That appointment is already cancelled or completed."}
 

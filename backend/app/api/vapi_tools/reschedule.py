@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
+import time as _time
 from datetime import datetime
+from threading import Lock
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -15,7 +18,85 @@ from app.services.slot_engine import (
 from app.services.time_utils import format_for_voice, now_utc
 from app.supabase import get_supabase
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+MAX_VOICE_OPTIONS = 3
+MAX_APPOINTMENT_OPTIONS = 3
+
+# ---------------------------------------------------------------------------
+# Lightweight in-memory slot cache keyed by VAPI call_id.
+#
+# When _handle_reschedule offers slots to the caller, it caches them here so
+# that the finalization step can look up the *exact* slot the patient chose
+# by slot_number — eliminating the risk of VAPI's LLM passing the wrong
+# doctor_id / start_at / end_at.
+# ---------------------------------------------------------------------------
+_slot_cache: dict[str, dict[str, Any]] = {}
+_cache_lock = Lock()
+_CACHE_TTL_SECONDS = 600  # 10 minutes — generous for a voice call
+
+
+def _cache_slots(call_id: str, appointment_id: str, slots: list[dict[str, Any]]) -> None:
+    with _cache_lock:
+        _slot_cache[call_id] = {
+            "appointment_id": appointment_id,
+            "slots": slots,
+            "expires": _time.monotonic() + _CACHE_TTL_SECONDS,
+        }
+        # Purge expired entries to prevent unbounded growth
+        now = _time.monotonic()
+        expired = [k for k, v in _slot_cache.items() if v["expires"] < now]
+        for k in expired:
+            del _slot_cache[k]
+
+
+def _pop_cached_slot(call_id: str, slot_number: int) -> dict[str, Any] | None:
+    """Look up a previously offered slot by call_id + slot_number.
+
+    Returns a dict with slot fields + original_appointment_id, or None on miss.
+    """
+    with _cache_lock:
+        entry = _slot_cache.get(call_id)
+        if not entry or entry["expires"] < _time.monotonic():
+            return None
+        for slot in entry["slots"]:
+            if slot.get("slot_number") == slot_number:
+                return {**slot, "original_appointment_id": entry["appointment_id"]}
+    return None
+
+
+def _prepare_slot_choices(slots: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    trimmed = slots[:MAX_VOICE_OPTIONS]
+    return [{**slot, "slot_number": index} for index, slot in enumerate(trimmed, start=1)]
+
+
+def _spoken_slot_list(slots: list[dict[str, Any]]) -> str:
+    phrases = []
+    for slot in slots:
+        phrase = f"option {slot['slot_number']} is {slot['label']}"
+        if slot.get("doctor_name"):
+            phrase += f" with {slot['doctor_name']}"
+        phrases.append(phrase)
+
+    if len(phrases) == 1:
+        return phrases[0]
+    if len(phrases) == 2:
+        return " or ".join(phrases)
+    return ", ".join(phrases[:-1]) + ", or " + phrases[-1]
+
+
+def _appointment_voice_label(appointment: dict[str, Any]) -> str:
+    start_at = appointment["start_at"]
+    start_dt = datetime.fromisoformat(start_at.replace("Z", "+00:00"))
+    when = format_for_voice(start_dt)
+    doctor_name = appointment.get("doctors", {}).get("full_name", "your doctor")
+    reason = (appointment.get("reason") or "").strip()
+
+    phrase = f"with {doctor_name} on {when}"
+    if reason:
+        phrase += f" for {reason}"
+    return phrase
 
 
 def _handle_find_appointment(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
@@ -34,14 +115,15 @@ def _handle_find_appointment(args: dict[str, Any], payload: dict[str, Any]) -> d
     sb = get_supabase()
     now = now_utc()
 
-    # SAFETY-CRITICAL: Filter to future appointments only.
-    # Without this, past appointments could be presented as "upcoming".
+    # SAFETY-CRITICAL: Filter to non-ended appointments only.
+    # Use end_at > now so that in-progress appointments (started but not yet
+    # ended) are still visible for rescheduling or cancellation.
     query = (
         sb.table("appointments")
         .select("id,doctor_id,specialty_id,start_at,end_at,reason,symptoms,status,doctors(full_name)")
         .eq("patient_id", patient_id)
         .eq("status", "CONFIRMED")
-        .gt("start_at", now.isoformat())
+        .gt("end_at", now.isoformat())
         .order("start_at", desc=False)
         .limit(10)
     )
@@ -91,19 +173,32 @@ def _handle_find_appointment(args: dict[str, Any], payload: dict[str, Any]) -> d
 
     # Multiple matches — list them for the patient to pick
     options = []
-    for a in matches[:5]:
+    for index, a in enumerate(matches[:MAX_APPOINTMENT_OPTIONS], start=1):
         doc_name = a.get("doctors", {}).get("full_name", "Unknown")
         options.append({
+            "appointment_number": index,
             "id": a["id"],
             "doctor_name": doc_name,
             "start_at": a["start_at"],
             "reason": a.get("reason"),
+            "label": _appointment_voice_label(a),
         })
+
+    option_phrases = [
+        f"option {appointment['appointment_number']} is {appointment['label']}"
+        for appointment in options
+    ]
+    if len(option_phrases) == 1:
+        spoken = option_phrases[0]
+    elif len(option_phrases) == 2:
+        spoken = " or ".join(option_phrases)
+    else:
+        spoken = ", ".join(option_phrases[:-1]) + ", or " + option_phrases[-1]
 
     return {
         "status": "MULTIPLE",
         "appointments": options,
-        "message": f"I found {len(options)} appointments. Which one are you referring to?",
+        "message": f"I found these upcoming appointments: {spoken}. Which one are you referring to?",
     }
 
 
@@ -113,7 +208,34 @@ def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
     This is step 1 of the reschedule flow: discover alternative slots.
     The original appointment remains untouched until the patient picks a
     new slot and reschedule_finalize is called.
+
+    Finalization paths (checked in order):
+      1. slot_number present  → look up cached slot (most reliable)
+      2. doctor_id + start_at + end_at present → forward to finalize (fallback)
     """
+    call_id = get_call_id(payload)
+
+    # -- Finalization path 1: slot_number from cache (preferred) --
+    slot_number = args.get("slot_number")
+    if slot_number is not None and call_id:
+        cached = _pop_cached_slot(call_id, int(slot_number))
+        if cached:
+            finalize_args = {**args, **cached}
+            if not finalize_args.get("original_appointment_id") and args.get("appointment_id"):
+                finalize_args["original_appointment_id"] = args["appointment_id"]
+            logger.info("reschedule: finalizing via cached slot_number=%s for call=%s", slot_number, call_id)
+            return _handle_reschedule_finalize(finalize_args, payload)
+        else:
+            logger.warning("reschedule: slot_number=%s requested but cache miss for call=%s", slot_number, call_id)
+
+    # -- Finalization path 2: explicit slot fields (fallback) --
+    if args.get("doctor_id") and args.get("start_at") and args.get("end_at"):
+        forwarded_args = dict(args)
+        if not forwarded_args.get("original_appointment_id") and args.get("appointment_id"):
+            forwarded_args["original_appointment_id"] = args["appointment_id"]
+        return _handle_reschedule_finalize(forwarded_args, payload)
+
+    # -- Slot discovery path --
     appointment_id = args.get("appointment_id")
     preferred_day = args.get("preferred_day", "")
     preferred_time = args.get("preferred_time", "")
@@ -123,10 +245,12 @@ def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
 
     sb = get_supabase()
 
+    patient_id = args.get("patient_id")
+
     # Fetch the original appointment
     res = (
         sb.table("appointments")
-        .select("id,specialty_id,doctor_id,status,start_at")
+        .select("id,patient_id,specialty_id,doctor_id,status,start_at,end_at")
         .eq("id", appointment_id)
         .limit(1)
         .execute()
@@ -136,12 +260,17 @@ def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
         return {"status": "NOT_FOUND", "message": "I couldn't find that appointment."}
 
     appt = data[0]
+
+    # SECURITY: Verify the appointment belongs to the requesting patient
+    if patient_id and appt.get("patient_id") and appt["patient_id"] != patient_id:
+        return {"status": "NOT_FOUND", "message": "I couldn't find that appointment."}
+
     if appt["status"] != "CONFIRMED":
         return {"status": "INVALID", "message": "That appointment isn't active and can't be rescheduled."}
 
-    # SAFETY: Verify the appointment is in the future
-    start_str = appt["start_at"].replace("Z", "+00:00")
-    if datetime.fromisoformat(start_str) <= now_utc():
+    # SAFETY: Verify the appointment has not ended yet
+    end_str = appt["end_at"].replace("Z", "+00:00")
+    if datetime.fromisoformat(end_str) <= now_utc():
         return {"status": "INVALID", "message": "That appointment is in the past and can't be rescheduled."}
 
     specialty_id = appt.get("specialty_id")
@@ -163,13 +292,17 @@ def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
             "slots": [],
         }
 
-    labels = [s["label"] for s in slots[:3]]
-    spoken = labels[0] if len(labels) == 1 else ", ".join(labels[:-1]) + " or " + labels[-1]
+    slots = _prepare_slot_choices(slots)
+
+    # Cache the offered slots so finalization can look them up by slot_number
+    if call_id:
+        _cache_slots(call_id, appointment_id, slots)
+
     return {
         "status": "SLOTS_AVAILABLE",
         "original_appointment_id": appointment_id,
         "slots": slots,
-        "message": f"I can reschedule you to {spoken}. Which one works?",
+        "message": f"I can reschedule you to {_spoken_slot_list(slots)}. Which option works?",
     }
 
 
@@ -194,10 +327,11 @@ def _handle_reschedule_finalize(args: dict[str, Any], payload: dict[str, Any]) -
     start_at = args.get("start_at")
     end_at = args.get("end_at")
 
-    if not all([original_appointment_id, patient_id, doctor_id, start_at, end_at]):
+    if not all([original_appointment_id, doctor_id, start_at, end_at]):
         return {"status": "INVALID", "message": "Missing required reschedule information."}
 
-    assert isinstance(start_at, str) and isinstance(end_at, str)
+    if not isinstance(start_at, str) or not isinstance(end_at, str):
+        return {"status": "INVALID", "message": "Start and end times must be valid date strings."}
 
     # Parse new slot times
     try:
@@ -214,7 +348,7 @@ def _handle_reschedule_finalize(args: dict[str, Any], payload: dict[str, Any]) -
     # -- Step 1: Validate original appointment is still reschedulable --
     orig_res = (
         sb.table("appointments")
-        .select("id,status,start_at,specialty_id,reason,symptoms,severity_description,severity_rating,urgency")
+        .select("id,patient_id,status,start_at,end_at,specialty_id,reason,symptoms,severity_description,severity_rating,urgency")
         .eq("id", original_appointment_id)
         .limit(1)
         .execute()
@@ -224,11 +358,20 @@ def _handle_reschedule_finalize(args: dict[str, Any], payload: dict[str, Any]) -
         return {"status": "NOT_FOUND", "message": "I couldn't find the original appointment."}
 
     orig_appt = orig_data[0]
+
+    # SECURITY: Verify the appointment belongs to the requesting patient
+    if patient_id and orig_appt.get("patient_id") and orig_appt["patient_id"] != patient_id:
+        return {"status": "NOT_FOUND", "message": "I couldn't find the original appointment."}
+
+    patient_id = patient_id or orig_appt.get("patient_id")
+    if not patient_id:
+        return {"status": "INVALID", "message": "Missing patient information for rescheduling."}
+
     if orig_appt["status"] != "CONFIRMED":
         return {"status": "INVALID", "message": "The original appointment is no longer active."}
 
-    orig_start_str = orig_appt["start_at"].replace("Z", "+00:00")
-    if datetime.fromisoformat(orig_start_str) <= now_utc():
+    orig_end_str = orig_appt["end_at"].replace("Z", "+00:00")
+    if datetime.fromisoformat(orig_end_str) <= now_utc():
         return {"status": "INVALID", "message": "The original appointment is in the past."}
 
     # -- Step 2: Validate the new slot is genuinely available --
@@ -270,7 +413,7 @@ def _handle_reschedule_finalize(args: dict[str, Any], payload: dict[str, Any]) -
         if "unique_doctor_appointment" in err_msg or "no_overlapping_confirmed" in err_msg:
             return {
                 "status": "TAKEN",
-                "message": "Sorry, that time was just booked by someone else. Please pick another slot.",
+                "message": "Sorry, that time is no longer available. Please pick another slot.",
             }
         return {"status": "ERROR", "message": f"Failed to create the new appointment: {err_msg}"}
 

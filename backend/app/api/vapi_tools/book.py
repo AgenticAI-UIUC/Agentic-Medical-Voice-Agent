@@ -1,19 +1,36 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Request
 
 from app.api.vapi_helpers import get_call_id, handle_tool_calls
+from app.api.vapi_tools.find_slots import pop_cached_slot
 from app.services.slot_engine import validate_slot
 from app.services.time_utils import format_for_voice
 from app.supabase import get_supabase
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
 def _handle_book(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    call_id = get_call_id(payload)
+
+    # Resolve slot_number from cache if provided — this guarantees the correct
+    # doctor_id / start_at / end_at even when VAPI's LLM misattributes them.
+    slot_number = args.get("slot_number")
+    if slot_number is not None and call_id:
+        cached = pop_cached_slot(call_id, int(slot_number))
+        if cached:
+            logger.info("book: resolved slot_number=%s from cache for call=%s", slot_number, call_id)
+            args = {**args, **cached}
+        else:
+            logger.warning("book: slot_number=%s requested but cache miss for call=%s", slot_number, call_id)
+
     patient_id = args.get("patient_id")
     doctor_id = args.get("doctor_id")
     start_at = args.get("start_at")
@@ -70,12 +87,12 @@ def _handle_book(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any
         res = sb.table("appointments").insert(row).execute()
     except Exception as e:
         err_msg = str(e)
-        if "unique_doctor_appointment" in err_msg:
+        if "unique_doctor_appointment" in err_msg or "no_overlapping_confirmed" in err_msg:
             return {
                 "status": "TAKEN",
-                "message": "Sorry, that time was just booked. Would you like to pick another time?",
+                "message": "Sorry, that time is no longer available. Would you like to pick another time?",
             }
-        raise
+        return {"status": "ERROR", "message": "Something went wrong booking your appointment."}
 
     ins = getattr(res, "data", None) or []
     if not ins:

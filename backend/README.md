@@ -59,17 +59,18 @@ backend/
 
 All Vapi tool endpoints accept the standard Vapi tool-call payload and return `{"results": [...]}`.
 
-| Method | Path                                  | Purpose                                                |
-| ------ | ------------------------------------- | ------------------------------------------------------ |
-| POST   | `/api/v1/vapi/tools/identify-patient` | Look up patient by UIN                                 |
-| POST   | `/api/v1/vapi/tools/register-patient` | Register new patient, returns 9-digit UIN              |
-| POST   | `/api/v1/vapi/tools/triage`           | Symptoms → specialty matching with follow-up questions |
-| POST   | `/api/v1/vapi/tools/list-specialties` | List all specialties (fallback if triage can't match)  |
-| POST   | `/api/v1/vapi/tools/find-slots`       | Find available times by specialty or specific doctor   |
-| POST   | `/api/v1/vapi/tools/book`             | Book an appointment                                    |
-| POST   | `/api/v1/vapi/tools/find-appointment` | Find a patient's existing appointment                  |
-| POST   | `/api/v1/vapi/tools/reschedule`       | Cancel old + find new slots for same specialty         |
-| POST   | `/api/v1/vapi/tools/cancel`           | Cancel an appointment                                  |
+| Method | Path                                     | Purpose                                                |
+| ------ | ---------------------------------------- | ------------------------------------------------------ |
+| POST   | `/api/v1/vapi/tools/identify-patient`    | Look up patient by UIN                                 |
+| POST   | `/api/v1/vapi/tools/register-patient`    | Register new patient, returns 9-digit UIN              |
+| POST   | `/api/v1/vapi/tools/triage`              | Symptoms → specialty matching with follow-up questions |
+| POST   | `/api/v1/vapi/tools/list-specialties`    | List all specialties (fallback if triage can't match)  |
+| POST   | `/api/v1/vapi/tools/find-slots`          | Find available times by specialty or specific doctor   |
+| POST   | `/api/v1/vapi/tools/book`                | Book an appointment                                    |
+| POST   | `/api/v1/vapi/tools/find-appointment`    | Find a patient's existing appointment                  |
+| POST   | `/api/v1/vapi/tools/reschedule`          | Find replacement slots for an existing appointment     |
+| POST   | `/api/v1/vapi/tools/reschedule-finalize` | Finalize a reschedule after slot selection             |
+| POST   | `/api/v1/vapi/tools/cancel`              | Cancel an appointment                                  |
 
 ### Vapi webhook
 
@@ -181,3 +182,416 @@ Set the server URL for the events webhook to `https://your-domain.com/api/v1/vap
 **Thin routes, service layer.** Vapi tool endpoints just parse the payload and delegate to `services/`. Business logic lives in `slot_engine.py` and `triage_engine.py`.
 
 **No auth yet.** Admin endpoints are unprotected. Add Supabase Auth or JWT middleware when ready.
+
+### 6. Vapi tools configurations
+
+**Name**
+reschedule_finalize
+
+**Description**
+Finalizes a reschedule by atomically booking the new slot and cancelling the original appointment. Call this after the patient picks a new slot from the reschedule tool results.
+
+**Parameters**
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "end_at": {
+      "description": "ISO 8601 end time of the new slot",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Reason for visit, carried over from the original appointment",
+      "type": "string"
+    },
+    "start_at": {
+      "description": "ISO 8601 start time of the new slot",
+      "type": "string"
+    },
+    "doctor_id": {
+      "description": "The doctor ID for the new slot",
+      "type": "string"
+    },
+    "patient_id": {
+      "description": "The patient's ID",
+      "type": "string"
+    },
+    "specialty_id": {
+      "description": "Specialty ID, carried over from the original appointment",
+      "type": "string"
+    },
+    "original_appointment_id": {
+      "description": "The ID of the appointment being rescheduled",
+      "type": "string"
+    }
+  },
+  "required": [
+    "original_appointment_id",
+    "patient_id",
+    "doctor_id",
+    "start_at",
+    "end_at"
+  ]
+}
+```
+
+**Server URL (local dev)**
+
+https://tracklessly-instinctive-gertude.ngrok-free.dev/api/v1/vapi/tools/reschedule-finalize
+
+**Name**
+cancel
+
+**Description**
+Cancel an existing confirmed appointment. Sets the appointment status to CANCELLED, which frees the time slot for other patients.
+
+**Parameters**
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "appointment_id": {
+      "description": "UUID of the appointment to cancel (from find_appointment)",
+      "type": "string"
+    }
+  },
+  "required": ["appointment_id"]
+}
+```
+
+**Server URL (local dev)**
+
+https://tracklessly-instinctive-gertude.ngrok-free.dev/api/v1/vapi/tools/cancel
+
+**Name**
+
+reschedule
+
+**Description**
+
+Find new available slots for rescheduling an existing appointment. Looks up the original appointment's specialty and finds slots for the same specialty. Does not cancel the old appointment — that happens when the new one is booked.
+
+**Parameters**
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "end_at": {
+      "description": "Fallback ISO 8601 end time from the selected slot. Only use if slot_number is unavailable.",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Reason for the appointment if available",
+      "type": "string"
+    },
+    "start_at": {
+      "description": "Fallback ISO 8601 start time from the selected slot. Only use if slot_number is unavailable.",
+      "type": "string"
+    },
+    "doctor_id": {
+      "description": "Fallback doctor UUID from the selected slot. Only use if slot_number is unavailable.",
+      "type": "string"
+    },
+    "patient_id": {
+      "description": "The patient UUID",
+      "type": "string"
+    },
+    "slot_number": {
+      "description": "The slot_number of the chosen option from the most recent reschedule response. Pass this to finalize the reschedule instead of passing doctor_id, start_at, end_at manually.",
+      "type": "integer"
+    },
+    "specialty_id": {
+      "description": "Specialty UUID if available",
+      "type": "string"
+    },
+    "preferred_day": {
+      "description": "Preferred day such as next week, Monday, or tomorrow",
+      "type": "string"
+    },
+    "appointment_id": {
+      "description": "The ID of the appointment to reschedule",
+      "type": "string"
+    },
+    "preferred_time": {
+      "description": "Preferred time of day such as morning, afternoon, or any",
+      "type": "string"
+    }
+  },
+  "required": ["appointment_id"]
+}
+```
+
+**Server URL (local dev)**
+https://tracklessly-instinctive-gertude.ngrok-free.dev/api/v1/vapi/tools/reschedule
+
+**Name**
+
+find_appointment
+
+**Description**
+
+Find a patient's existing confirmed appointment for rescheduling or cancellation. Can narrow down by doctor name and/or reason. Returns the matched appointment or a list if multiple match.
+
+**Parameters**
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "reason": {
+      "description": "Original reason or symptoms (partial match)",
+      "type": "string"
+    },
+    "patient_id": {
+      "description": "UUID of the patient",
+      "type": "string"
+    },
+    "doctor_name": {
+      "description": "Name of the doctor (partial match, case-insensitive)",
+      "type": "string"
+    }
+  },
+  "required": ["patient_id"]
+}
+```
+
+**Server URL (local dev)**
+
+https://tracklessly-instinctive-gertude.ngrok-free.dev/api/v1/vapi/tools/find-appointment
+
+**Name**
+
+book
+
+**Description**
+
+Book a confirmed appointment for a patient with a specific doctor at a specific time. Includes clinical info collected during triage. Prevents double-booking via a database constraint.
+
+**Parameters**
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "end_at": {
+      "description": "Fallback ISO 8601 end time from the selected slot. Only use if slot_number is unavailable.",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Brief reason for the visit",
+      "type": "string"
+    },
+    "urgency": {
+      "description": "Urgency level. Default ROUTINE.",
+      "type": "string",
+      "enum": ["ROUTINE", "URGENT"]
+    },
+    "start_at": {
+      "description": "Fallback ISO 8601 start time from the selected slot. Only use if slot_number is unavailable.",
+      "type": "string"
+    },
+    "symptoms": {
+      "description": "Patient-described symptoms",
+      "type": "string"
+    },
+    "doctor_id": {
+      "description": "Fallback doctor UUID from the selected slot. Only use if slot_number is unavailable.",
+      "type": "string"
+    },
+    "patient_id": {
+      "description": "The patient UUID",
+      "type": "string"
+    },
+    "slot_number": {
+      "description": "The slot_number of the chosen option from the most recent find_slots response. Pass this instead of doctor_id, start_at, end_at.",
+      "type": "integer"
+    },
+    "specialty_id": {
+      "description": "Specialty UUID",
+      "type": "string"
+    },
+    "severity_rating": {
+      "description": "Patient self-rated severity 1-10",
+      "type": "integer"
+    },
+    "follow_up_from_id": {
+      "description": "Appointment UUID of the original visit, only if this is a confirmed follow-up",
+      "type": "string"
+    },
+    "severity_description": {
+      "description": "Patient description of how bad the symptoms feel",
+      "type": "string"
+    }
+  },
+  "required": ["patient_id"]
+}
+```
+
+**Server URL (local dev)**
+
+https://tracklessly-instinctive-gertude.ngrok-free.dev/api/v1/vapi/tools/book
+
+**Name**
+
+find_slots
+
+**Description**
+
+Search for available appointment slots. Can search by specialty (finds slots across all doctors in that specialty) or by a specific doctor (for follow-ups). Supports natural language day and time preferences.
+
+**Parameters**
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "doctor_id": {
+      "description": "UUID of a specific doctor. Use for follow-ups with the same doctor.",
+      "type": "string"
+    },
+    "specialty_id": {
+      "description": "UUID of the specialty. Required if doctor_id is not provided.",
+      "type": "string"
+    },
+    "preferred_day": {
+      "description": "Natural language day preference (e.g. \"next Monday\", \"this week\", \"tomorrow\", \"2 weeks\")",
+      "type": "string"
+    },
+    "preferred_time": {
+      "description": "Time-of-day preference: \"morning\", \"afternoon\", or \"any\"",
+      "type": "string"
+    }
+  },
+  "required": []
+}
+```
+
+**Server URL (local dev)**
+
+https://tracklessly-instinctive-gertude.ngrok-free.dev/api/v1/vapi/tools/find-slots
+
+**Name**
+
+list_specialties
+
+**Description**
+
+Return all available medical specialties. Use as a fallback when triage cannot determine a specialty after multiple rounds, so the patient can choose manually.
+
+**Parameters**
+
+```json
+{
+  "type": "object",
+  "properties": {},
+  "required": []
+}
+```
+
+**Server URL (local dev)**
+
+https://tracklessly-instinctive-gertude.ngrok-free.dev/api/v1/vapi/tools/list-specialties
+
+**Name**
+
+triage
+
+**Description**
+
+Analyze patient symptoms to determine the appropriate medical specialty. Returns either a matched specialty (if confidence is high enough) or follow-up questions to narrow down the diagnosis. Supports iterative calls — pass previous answers back in to refine the match.
+
+**Parameters**
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "answers": {
+      "description": "Key-value pairs of previously answered follow-up questions",
+      "type": "object",
+      "properties": {}
+    },
+    "symptoms": {
+      "description": "Comma-separated symptom keywords (e.g. \"chest pain, shortness of breath\")",
+      "type": "string"
+    }
+  },
+  "required": ["symptoms"]
+}
+```
+
+**Server URL (local dev)**
+
+https://tracklessly-instinctive-gertude.ngrok-free.dev/api/v1/vapi/tools/triage
+
+**Name**
+
+register_patient
+
+**Description**
+
+Register a new patient in the system using their university UIN, full name, and phone number. Checks for duplicate UIN and phone before creating the record.
+
+**Parameters**
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "uin": {
+      "description": "The patient's 9-digit university-issued UIN",
+      "type": "string"
+    },
+    "email": {
+      "description": "Patient's email address",
+      "type": "string"
+    },
+    "phone": {
+      "description": "Patient's phone number (10+ digits)",
+      "type": "string"
+    },
+    "allergies": {
+      "description": "Known allergies",
+      "type": "string"
+    },
+    "full_name": {
+      "description": "Patient's full name",
+      "type": "string"
+    }
+  },
+  "required": ["uin", "full_name", "phone"]
+}
+```
+
+**Server URL (local dev)**
+
+https://tracklessly-instinctive-gertude.ngrok-free.dev/api/v1/vapi/tools/register-patient
+
+**Name**
+
+identify_patient
+
+**Description**
+
+Look up an existing patient by their 9-digit university UIN. Returns the patient record if found, or an error if the UIN is invalid or not registered.
+
+**Parameters**
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "uin": {
+      "description": "The patient's 9-digit university-issued UIN",
+      "type": "string"
+    }
+  },
+  "required": ["uin"]
+}
+```
+
+**Server URL (local dev)**
+https://tracklessly-instinctive-gertude.ngrok-free.dev/api/v1/vapi/tools/identify-patient

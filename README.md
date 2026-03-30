@@ -172,7 +172,9 @@ The admin dashboard will be available at **http://localhost:3000**.
 | POST   | `/api/v1/vapi/tools/triage`           | Symptom → specialty matching        |
 | POST   | `/api/v1/vapi/tools/find-slots`       | Compute available appointment slots |
 | POST   | `/api/v1/vapi/tools/book`             | Book an appointment                 |
-| POST   | `/api/v1/vapi/tools/reschedule`       | Reschedule an existing appointment  |
+| POST   | `/api/v1/vapi/tools/find-appointment` | Find an existing appointment        |
+| POST   | `/api/v1/vapi/tools/reschedule`       | Find replacement slots              |
+| POST   | `/api/v1/vapi/tools/reschedule-finalize` | Finalize a reschedule            |
 | POST   | `/api/v1/vapi/tools/cancel`           | Cancel an appointment               |
 | POST   | `/api/v1/vapi/tools/list-specialties` | List all specialties (fallback)     |
 | POST   | `/api/v1/vapi/events`                 | Webhook for call lifecycle events   |
