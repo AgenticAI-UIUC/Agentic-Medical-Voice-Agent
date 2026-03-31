@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
-from app.api.vapi_helpers import handle_tool_calls
+from app.api.vapi_helpers import get_call_id, get_call_context, handle_tool_calls
 from app.supabase import get_supabase
 
 router = APIRouter()
@@ -12,7 +12,9 @@ router = APIRouter()
 
 def _handle_cancel(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     appointment_id = args.get("appointment_id")
-    patient_id = args.get("patient_id")
+    call_id = get_call_id(payload)
+    ctx = get_call_context(call_id)
+    patient_id = args.get("patient_id") or ctx.get("patient_id")
     if not appointment_id:
         return {"status": "INVALID", "message": "I need to know which appointment to cancel."}
 

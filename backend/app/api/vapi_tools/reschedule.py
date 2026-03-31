@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
-from app.api.vapi_helpers import get_call_id, handle_tool_calls
+from app.api.vapi_helpers import get_call_id, get_call_context, handle_tool_calls
 from app.services.slot_engine import (
     find_available_slots,
     find_slots_for_specialty,
@@ -66,6 +66,24 @@ def _pop_cached_slot(call_id: str, slot_number: int) -> dict[str, Any] | None:
     return None
 
 
+def _match_cached_slot(call_id: str, start_at: str | None = None, doctor_id: str | None = None) -> dict[str, Any] | None:
+    """Fuzzy-match a cached reschedule slot when slot_number is unavailable."""
+    if not start_at and not doctor_id:
+        return None
+    with _cache_lock:
+        entry = _slot_cache.get(call_id)
+        if not entry or entry["expires"] < _time.monotonic():
+            return None
+        for slot in entry["slots"]:
+            if start_at and slot.get("start_at") and (start_at in slot["start_at"] or slot["start_at"] in start_at):
+                return {**slot, "original_appointment_id": entry["appointment_id"]}
+        if doctor_id:
+            matches = [s for s in entry["slots"] if s.get("doctor_id") == doctor_id]
+            if len(matches) == 1:
+                return {**matches[0], "original_appointment_id": entry["appointment_id"]}
+    return None
+
+
 def _prepare_slot_choices(slots: list[dict[str, Any]]) -> list[dict[str, Any]]:
     trimmed = slots[:MAX_VOICE_OPTIONS]
     return [{**slot, "slot_number": index} for index, slot in enumerate(trimmed, start=1)]
@@ -105,7 +123,9 @@ def _handle_find_appointment(args: dict[str, Any], payload: dict[str, Any]) -> d
     SAFETY: Only returns future confirmed appointments so the caller cannot
     be told a past appointment is "upcoming".
     """
-    patient_id = args.get("patient_id")
+    call_id = get_call_id(payload)
+    ctx = get_call_context(call_id)
+    patient_id = args.get("patient_id") or ctx.get("patient_id")
     if not patient_id:
         return {"status": "INVALID", "message": "I need your patient information first."}
 
@@ -245,7 +265,8 @@ def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
 
     sb = get_supabase()
 
-    patient_id = args.get("patient_id")
+    ctx = get_call_context(call_id)
+    patient_id = args.get("patient_id") or ctx.get("patient_id")
 
     # Fetch the original appointment
     res = (
@@ -322,10 +343,22 @@ def _handle_reschedule_finalize(args: dict[str, Any], payload: dict[str, Any]) -
     RESCHEDULE_PARTIAL_FAILURE status is returned so the caller can surface it.
     """
     original_appointment_id = args.get("original_appointment_id") or args.get("appointment_id")
-    patient_id = args.get("patient_id")
+    call_id = get_call_id(payload)
+    ctx = get_call_context(call_id)
+    patient_id = args.get("patient_id") or ctx.get("patient_id")
     doctor_id = args.get("doctor_id")
     start_at = args.get("start_at")
     end_at = args.get("end_at")
+
+    # Fuzzy-match against cached slots when explicit slot fields are missing
+    if not all([doctor_id, start_at, end_at]) and call_id:
+        fuzzy = _match_cached_slot(call_id, start_at=start_at, doctor_id=doctor_id)
+        if fuzzy:
+            logger.info("reschedule_finalize: fuzzy-matched cached slot for call=%s", call_id)
+            doctor_id = doctor_id or fuzzy.get("doctor_id")
+            start_at = start_at or fuzzy.get("start_at")
+            end_at = end_at or fuzzy.get("end_at")
+            original_appointment_id = original_appointment_id or fuzzy.get("original_appointment_id")
 
     if not all([original_appointment_id, doctor_id, start_at, end_at]):
         return {"status": "INVALID", "message": "Missing required reschedule information."}

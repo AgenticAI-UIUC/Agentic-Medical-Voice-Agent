@@ -6,8 +6,8 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
-from app.api.vapi_helpers import get_call_id, handle_tool_calls
-from app.api.vapi_tools.find_slots import pop_cached_slot
+from app.api.vapi_helpers import get_call_id, get_call_context, handle_tool_calls
+from app.api.vapi_tools.find_slots import pop_cached_slot, match_cached_slot
 from app.services.slot_engine import validate_slot
 from app.services.time_utils import format_for_voice
 from app.supabase import get_supabase
@@ -31,12 +31,27 @@ def _handle_book(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any
         else:
             logger.warning("book: slot_number=%s requested but cache miss for call=%s", slot_number, call_id)
 
-    patient_id = args.get("patient_id")
+    # Fall back to call context for fields the LLM may not have forwarded.
+    ctx = get_call_context(call_id)
+    patient_id = args.get("patient_id") or ctx.get("patient_id")
     doctor_id = args.get("doctor_id")
     start_at = args.get("start_at")
     end_at = args.get("end_at")
 
+    # If slot_number wasn't provided and we're still missing slot fields,
+    # try fuzzy-matching against cached slots using whatever the LLM did pass.
+    if not all([doctor_id, start_at, end_at]) and call_id:
+        fuzzy = match_cached_slot(call_id, start_at=start_at, doctor_id=doctor_id)
+        if fuzzy:
+            logger.info("book: fuzzy-matched cached slot for call=%s", call_id)
+            doctor_id = doctor_id or fuzzy.get("doctor_id")
+            start_at = start_at or fuzzy.get("start_at")
+            end_at = end_at or fuzzy.get("end_at")
+
     if not all([patient_id, doctor_id, start_at, end_at]):
+        missing = [k for k, v in {"patient_id": patient_id, "doctor_id": doctor_id,
+                                   "start_at": start_at, "end_at": end_at}.items() if not v]
+        logger.warning("book: missing fields %s for call=%s", missing, call_id)
         return {"status": "INVALID", "message": "Missing required booking information."}
 
     # Validate and parse datetimes before touching the database
@@ -72,7 +87,7 @@ def _handle_book(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any
         "doctor_id": doctor_id,
         "start_at": start_at,
         "end_at": end_at,
-        "specialty_id": args.get("specialty_id"),
+        "specialty_id": args.get("specialty_id") or ctx.get("specialty_id"),
         "follow_up_from_id": args.get("follow_up_from_id"),
         "reason": (args.get("reason") or "").strip() or None,
         "symptoms": (args.get("symptoms") or "").strip() or None,

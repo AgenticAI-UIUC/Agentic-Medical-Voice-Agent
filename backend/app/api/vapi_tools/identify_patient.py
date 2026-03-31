@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
-from app.api.vapi_helpers import handle_tool_calls, normalize_phone
+from app.api.vapi_helpers import get_call_id, handle_tool_calls, normalize_phone, set_call_context
 from app.supabase import get_supabase
 
 router = APIRouter()
@@ -54,6 +54,8 @@ def _lookup_patient(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, 
         }
 
     patient = data[0]
+    call_id = get_call_id(payload)
+    set_call_context(call_id, patient_id=patient["id"])
     return {
         "status": "FOUND",
         "patient_id": patient["id"],
@@ -117,6 +119,8 @@ def _register_patient(args: dict[str, Any], payload: dict[str, Any]) -> dict[str
         return {"status": "ERROR", "message": "Something went wrong during registration. Please try again."}
 
     patient = ins[0]
+    call_id = get_call_id(payload)
+    set_call_context(call_id, patient_id=patient["id"])
     return {
         "status": "REGISTERED",
         "patient_id": patient["id"],

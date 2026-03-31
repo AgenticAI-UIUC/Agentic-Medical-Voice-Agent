@@ -51,6 +51,27 @@ def pop_cached_slot(call_id: str, slot_number: int) -> dict[str, Any] | None:
     return None
 
 
+def match_cached_slot(call_id: str, start_at: str | None = None, doctor_id: str | None = None) -> dict[str, Any] | None:
+    """Fuzzy-match a cached slot by start_at or doctor_id when slot_number is unavailable."""
+    if not start_at and not doctor_id:
+        return None
+    with _cache_lock:
+        entry = _slot_cache.get(call_id)
+        if not entry or entry["expires"] < _time.monotonic():
+            return None
+        for slot in entry["slots"]:
+            if start_at and slot.get("start_at") and start_at in slot["start_at"]:
+                return dict(slot)
+            if start_at and slot.get("start_at") and slot["start_at"] in start_at:
+                return dict(slot)
+        # If only doctor_id matches and there's exactly one slot for that doctor, use it
+        if doctor_id:
+            matches = [s for s in entry["slots"] if s.get("doctor_id") == doctor_id]
+            if len(matches) == 1:
+                return dict(matches[0])
+    return None
+
+
 def _prepare_slot_choices(slots: list[dict[str, Any]]) -> list[dict[str, Any]]:
     trimmed = slots[:MAX_VOICE_OPTIONS]
     return [{**slot, "slot_number": index} for index, slot in enumerate(trimmed, start=1)]

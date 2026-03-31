@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
-from app.api.vapi_helpers import handle_tool_calls
+from app.api.vapi_helpers import get_call_id, handle_tool_calls, set_call_context
 from app.services.triage_engine import triage_symptoms, get_all_specialties
 
 router = APIRouter()
@@ -20,6 +20,8 @@ def _handle_triage(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
     result = triage_symptoms(symptoms, answers)
 
     if result.specialty_determined:
+        call_id = get_call_id(payload)
+        set_call_context(call_id, specialty_id=result.specialty_id)
         return {
             "status": "SPECIALTY_FOUND",
             "specialty_determined": True,
