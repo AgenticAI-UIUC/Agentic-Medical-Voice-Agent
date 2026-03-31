@@ -17,6 +17,137 @@ Patient calls in
 
 The voice agent uses Vapi tool calling to invoke backend endpoints at each step. Slots are computed on-the-fly from weekly availability templates — no cron jobs or pre-generated data.
 
+## Conversation Workflows
+
+### New Appointment (Booking)
+
+```
+Patient: "I'd like to make an appointment"
+  │
+  ├─ New patient?
+  │   ├─ Yes → Collect UIN, name, phone → register_patient
+  │   └─ No  → Collect UIN → identify_patient
+  │
+  ▼
+Symptom Collection
+  │  "Can you describe your symptoms?"
+  │  "On a scale of 1-10, how severe?"
+  │  "Do you have a specialist preference?"
+  │
+  ▼
+Triage Loop (up to 5 rounds)
+  │  Call triage with symptoms
+  │  ├─ Confidence ≥ 60% → Specialty determined
+  │  └─ Confidence < 60% → Ask follow-up questions → re-triage
+  │
+  │  If still undetermined after 5 rounds:
+  │  └─ Use patient's preferred specialty, or list_specialties for manual pick
+  │
+  ▼
+Specialty Confirmation
+  │  Compare triage result with patient's preference
+  │  ├─ Match → Confirm
+  │  └─ Differ → Ask patient which they prefer
+  │
+  ▼
+Find Slots
+  │  "How soon would you like to be seen?"
+  │  "Morning or afternoon?"
+  │  Call find_slots → Present up to 3 options
+  │  ├─ Slots found → Patient picks one
+  │  └─ No slots → Suggest wider time window → retry
+  │
+  ▼
+Book Appointment
+  │  Call book → Confirmation
+  │  "You're booked with Dr. [name] on [day] at [time]."
+  │
+  ▼
+End of call → Transcript saved via webhook
+```
+
+### Reschedule
+
+```
+Patient: "I'd like to reschedule"
+  │  (Skip "have you been here before?" — rescheduling implies returning patient)
+  │
+  ▼
+Identify Patient (UIN → identify_patient)
+  │
+  ▼
+Find Appointment (find_appointment)
+  │  ├─ Single match → Confirm with patient
+  │  ├─ Multiple → List options, patient picks one
+  │  └─ None found → Offer to book new
+  │
+  ▼
+Collect Preferences
+  │  "When would you like to reschedule to?"
+  │  "Morning or afternoon?"
+  │
+  ▼
+Find New Slots (reschedule)
+  │  ├─ Slots found → Patient picks one
+  │  └─ No slots → Ask for different day/time → retry
+  │
+  ▼
+Finalize (reschedule_finalize)
+  │  Atomically: book new slot + cancel old appointment
+  │  "You're now booked with Dr. [name] on [day] at [time].
+  │   Your previous appointment has been cancelled."
+```
+
+### Cancel
+
+```
+Patient: "I'd like to cancel"
+  │
+  ▼
+Identify Patient → Find Appointment
+  │  (Same as reschedule flow)
+  │
+  ▼
+Confirm Cancellation
+  │  "Are you sure you'd like to cancel?"
+  │  ├─ Yes → Call cancel → "Your appointment has been cancelled."
+  │  └─ No  → "No problem, your appointment stays as is."
+```
+
+## Architecture
+
+```
+┌──────────────┐     ┌──────────────────┐     ┌──────────────┐
+│              │     │                  │     │              │
+│  Patient     │────▶│  Vapi.ai         │────▶│  FastAPI     │
+│  (Phone)     │◀────│  (Voice + LLM)   │◀────│  Backend     │
+│              │     │                  │     │              │
+└──────────────┘     └──────────────────┘     └──────┬───────┘
+                                                     │
+                     ┌──────────────────┐     ┌──────▼───────┐
+                     │                  │     │              │
+                     │  Next.js Admin   │────▶│  Supabase    │
+                     │  Dashboard       │◀────│  (PostgreSQL)│
+                     │                  │     │              │
+                     └──────────────────┘     └──────────────┘
+```
+
+**Data flow:**
+1. Patient calls → Vapi handles speech-to-text and LLM orchestration
+2. Vapi's LLM decides which tool to call based on the system prompt
+3. Tool calls hit FastAPI endpoints → query/mutate Supabase
+4. Results returned to Vapi → LLM generates spoken response
+5. End-of-call webhook saves transcript to database
+6. Admin dashboard reads from Supabase for doctor/patient/appointment management
+
+## Key Design Decisions
+
+- **Stateless slot computation.** Available times are computed on every request from weekly templates minus booked appointments and blocks. No cron jobs, no stale pre-generated data.
+- **Confidence-based triage.** Symptoms are scored against a weighted mapping table. If the top candidate's confidence exceeds 60%, a specialty is recommended. Otherwise, follow-up questions are asked (up to 5 rounds).
+- **Atomic rescheduling.** `reschedule_finalize` books the new slot and cancels the old one in a single operation. If the cancel fails, the patient gets a partial-failure notice instead of a silent error.
+- **Timezone-aware formatting.** All times stored in UTC. Voice labels are converted to the clinic's local timezone (`CLINIC_TIMEZONE`) for natural readback — "Wednesday, April 8 at 1 PM" instead of raw ISO strings.
+- **Backend validates, not the LLM.** The system prompt tells the voice agent not to count digits or validate phone numbers itself — the backend handles all validation and returns clear error messages for the LLM to relay.
+
 ## Tech Stack
 
 | Layer    | Technology                                    |
@@ -62,8 +193,7 @@ The voice agent uses Vapi tool calling to invoke backend endpoints at each step.
 │   │   ├── hooks/                 # Auth & data hooks
 │   │   └── lib/api/               # API client & types
 │   └── package.json
-└── supabase/
-    └── schema.sql                 # Full database schema
+└── Medical Voice Agent — System Prompt.md   # Vapi assistant system prompt
 ```
 
 ## Prerequisites
@@ -99,10 +229,10 @@ cp frontend/.env.local.example frontend/.env.local
 Run the schema in your Supabase project:
 
 ```bash
-# Option A: Paste supabase/schema.sql into the Supabase SQL Editor
+# Option A: Paste backend/schema.sql into the Supabase SQL Editor
 
 # Option B: psql
-psql "$SUPABASE_DB_URL" -f supabase/schema.sql
+psql "$SUPABASE_DB_URL" -f backend/schema.sql
 ```
 
 Optionally load seed data for local development:
@@ -110,6 +240,8 @@ Optionally load seed data for local development:
 ```bash
 psql "$SUPABASE_DB_URL" -f backend/seed.sql
 ```
+
+The seed data includes 10 specialties, 8 doctors with weekly schedules, 50+ symptom mappings, and 5 test patients.
 
 ### 3. Start the backend
 
@@ -136,6 +268,14 @@ pnpm dev
 ```
 
 The admin dashboard will be available at **http://localhost:3000**.
+
+### 5. Configure Vapi
+
+1. Create an assistant in the [Vapi dashboard](https://dashboard.vapi.ai/)
+2. Set the **Server URL** to your ngrok URL (e.g., `https://xxxx.ngrok.io/api/v1`)
+3. Paste the contents of `Medical Voice Agent — System Prompt.md` as the system prompt
+4. Create each tool listed in the [Vapi Tool Definitions](#vapi-tool-definitions) section below
+5. Set the **First Message** to: "Hi, this is Jane from the clinic. How can I help you today?"
 
 ## Environment Variables
 
@@ -166,43 +306,383 @@ The admin dashboard will be available at **http://localhost:3000**.
 
 ### Vapi Tool Endpoints
 
-| Method | Path                                    | Description                       |
-| ------ | --------------------------------------- | --------------------------------- |
-| POST   | `/api/v1/vapi/tools/identify-patient`   | Patient lookup / registration     |
-| POST   | `/api/v1/vapi/tools/triage`             | Symptom → specialty matching      |
+| Method | Path                                    | Description                         |
+| ------ | --------------------------------------- | ----------------------------------- |
+| POST   | `/api/v1/vapi/tools/identify-patient`   | Look up patient by UIN              |
+| POST   | `/api/v1/vapi/tools/register-patient`   | Register a new patient              |
+| POST   | `/api/v1/vapi/tools/triage`             | Symptom → specialty matching        |
+| POST   | `/api/v1/vapi/tools/list-specialties`   | List all specialties (fallback)     |
 | POST   | `/api/v1/vapi/tools/find-slots`         | Compute available appointment slots |
-| POST   | `/api/v1/vapi/tools/book`               | Book an appointment               |
-| POST   | `/api/v1/vapi/tools/reschedule`         | Reschedule an existing appointment |
-| POST   | `/api/v1/vapi/tools/cancel`             | Cancel an appointment             |
-| POST   | `/api/v1/vapi/tools/list-specialties`   | List all specialties (fallback)   |
-| POST   | `/api/v1/vapi/events`                   | Webhook for call lifecycle events |
+| POST   | `/api/v1/vapi/tools/book`               | Book an appointment                 |
+| POST   | `/api/v1/vapi/tools/find-appointment`   | Find existing appointments          |
+| POST   | `/api/v1/vapi/tools/reschedule`         | Find new slots for rescheduling     |
+| POST   | `/api/v1/vapi/tools/reschedule-finalize`| Book new + cancel old atomically    |
+| POST   | `/api/v1/vapi/tools/cancel`             | Cancel an appointment               |
+| POST   | `/api/v1/vapi/events`                   | Webhook for call lifecycle events   |
 
 ### Admin Endpoints
 
-| Method     | Path                                      | Description                  |
-| ---------- | ----------------------------------------- | ---------------------------- |
-| GET/POST   | `/api/v1/admin/doctors`                   | List / create doctors        |
-| GET/PUT    | `/api/v1/admin/doctors/:id/availability`  | Manage weekly schedules      |
-| POST/GET/DELETE | `/api/v1/admin/doctors/:id/blocks`   | Manage time-off blocks       |
-| GET        | `/api/v1/admin/patients`                  | List / search patients       |
-| GET        | `/api/v1/admin/appointments`              | List appointments (filterable) |
-| GET        | `/health`                                 | Health check                 |
+| Method         | Path                                      | Description                  |
+| -------------- | ----------------------------------------- | ---------------------------- |
+| GET/POST       | `/api/v1/admin/doctors`                   | List / create doctors        |
+| GET/PUT        | `/api/v1/admin/doctors/:id/availability`  | Manage weekly schedules      |
+| POST/GET/DELETE| `/api/v1/admin/doctors/:id/blocks`        | Manage time-off blocks       |
+| GET            | `/api/v1/admin/patients`                  | List / search patients       |
+| GET            | `/api/v1/admin/appointments`              | List appointments (filterable) |
+| GET            | `/health`                                 | Health check                 |
 
 ## Database Schema
 
 9 core tables in Supabase (PostgreSQL):
 
-- **specialties** — Medical specialty lookup
-- **symptom_specialty_map** — Symptom-to-specialty mapping with weights and follow-up questions
-- **doctors** — Doctor profiles
-- **doctor_specialties** — Doctor ↔ specialty links (many-to-many)
-- **doctor_availability** — Weekly schedule templates (day, start/end time, slot duration)
-- **doctor_blocks** — One-off unavailability periods
-- **patients** — Patient records identified by 9-digit UIN
-- **appointments** — Booked appointments with triage data and follow-up links
-- **conversations** — Vapi call transcripts and summaries
+```
+specialties ◀── symptom_specialty_map
+    ▲
+    │
+doctor_specialties ──▶ doctors ◀── doctor_availability
+                         ▲            doctor_blocks
+                         │
+                    appointments ──▶ patients
+                         │              ▲
+                         ▼              │
+                    conversations ──────┘
+```
 
-See `supabase/schema.sql` for the full schema.
+| Table                  | Description                                                    |
+| ---------------------- | -------------------------------------------------------------- |
+| **specialties**        | Medical specialty lookup (e.g., Cardiology, Dermatology)       |
+| **symptom_specialty_map** | Symptom → specialty mapping with weights and follow-up questions |
+| **doctors**            | Doctor profiles (name, image, active status)                   |
+| **doctor_specialties** | Doctor ↔ specialty links (many-to-many)                        |
+| **doctor_availability**| Weekly schedule templates (day, start/end time, slot duration)  |
+| **doctor_blocks**      | One-off unavailability periods (conferences, time off)         |
+| **patients**           | Patient records identified by 9-digit UIN                      |
+| **appointments**       | Booked appointments with triage data, severity, and follow-up links |
+| **conversations**      | Vapi call transcripts (JSON) and AI-generated summaries        |
+
+See `backend/schema.sql` for the full schema.
+
+## Triage Engine
+
+The triage engine matches patient symptoms to medical specialties using a weighted scoring system.
+
+**How it works:**
+
+1. Patient symptoms are matched against the `symptom_specialty_map` table (case-insensitive partial match)
+2. Weights are summed per specialty across all matched symptoms
+3. Scores are normalized to a 0–1 confidence scale
+4. If the top candidate's confidence is ≥ 60%, the specialty is returned
+5. Otherwise, follow-up questions are extracted from the top candidates and sent back to the voice agent
+
+**Example:**
+
+```
+Symptoms: "chest pain, shortness of breath"
+
+  chest pain        → Cardiology (2.0), Emergency Medicine (1.5)
+  shortness of breath → Cardiology (1.5), Pulmonology (1.5)
+
+  Cardiology total:  3.5  →  confidence ≈ 70%  →  SPECIALTY_FOUND
+  Pulmonology total: 1.5
+```
+
+The triage loop runs up to 5 times. If no specialty is determined after 5 rounds, the system falls back to the patient's stated preference or lists all specialties for manual selection.
+
+## Slot Engine
+
+The slot engine computes available appointment times on-the-fly from weekly templates.
+
+**Algorithm:**
+
+1. Parse the patient's preferred day (natural language: "tomorrow", "next Monday", "this week") into a date range
+2. Parse their time preference into a bucket (morning: 8 AM–12 PM, afternoon: 12–5 PM, or any)
+3. For each doctor with the target specialty:
+   - Fetch their weekly availability templates
+   - Generate all theoretical slots in the date range
+   - Subtract booked appointments and doctor blocks
+   - Filter by time bucket
+4. Return up to 5 slots sorted by start time, with voice-friendly labels
+
+**Natural language date parsing** supports: today, tomorrow, this week, next week, next Monday, weekend, specific dates (3/24, March 24), and relative ranges (2 weeks).
+
+## Vapi Tool Definitions
+
+These are the tools configured in the Vapi dashboard. Each tool calls a backend endpoint via Vapi's server URL.
+
+### identify_patient
+
+Look up an existing patient by their 9-digit university UIN. Returns the patient record if found, or an error if the UIN is invalid or not registered.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "uin": {
+      "type": "string",
+      "description": "The patient's 9-digit university identification number"
+    }
+  },
+  "required": ["uin"]
+}
+```
+
+### register_patient
+
+Register a new patient in the system with their UIN, name, and phone number.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "uin": {
+      "type": "string",
+      "description": "The patient's 9-digit university identification number"
+    },
+    "full_name": {
+      "type": "string",
+      "description": "The patient's full name"
+    },
+    "phone": {
+      "type": "string",
+      "description": "The patient's phone number (any length)"
+    },
+    "email": {
+      "type": "string",
+      "description": "The patient's email address (optional)"
+    },
+    "allergies": {
+      "type": "string",
+      "description": "Any known allergies (optional)"
+    }
+  },
+  "required": ["uin", "full_name", "phone"]
+}
+```
+
+### triage
+
+Analyze patient symptoms to determine the appropriate medical specialty. May return follow-up questions if more information is needed.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "symptoms": {
+      "type": "string",
+      "description": "Comma-separated list of the patient's symptoms"
+    },
+    "answers": {
+      "type": "object",
+      "description": "Answers to follow-up triage questions from a previous triage call (optional)"
+    }
+  },
+  "required": ["symptoms"]
+}
+```
+
+### list_specialties
+
+List all available medical specialties. Used as a fallback when triage cannot determine a specialty.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+### find_slots
+
+Find available appointment slots for a given specialty or doctor within a preferred time window.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "specialty_id": {
+      "type": "string",
+      "description": "The specialty ID to find slots for (for new appointments)"
+    },
+    "doctor_id": {
+      "type": "string",
+      "description": "The doctor ID to find slots for (for follow-ups)"
+    },
+    "preferred_day": {
+      "type": "string",
+      "description": "Preferred day or time range, e.g. 'tomorrow', 'next Monday', 'this week'"
+    },
+    "preferred_time": {
+      "type": "string",
+      "description": "Preferred time of day, e.g. 'morning', 'afternoon', 'any'"
+    }
+  }
+}
+```
+
+### book
+
+Book a confirmed appointment for a patient with a specific doctor and time slot.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "patient_id": {
+      "type": "string",
+      "description": "The patient's ID"
+    },
+    "doctor_id": {
+      "type": "string",
+      "description": "The doctor's ID"
+    },
+    "start_at": {
+      "type": "string",
+      "description": "ISO 8601 datetime for appointment start"
+    },
+    "end_at": {
+      "type": "string",
+      "description": "ISO 8601 datetime for appointment end"
+    },
+    "specialty_id": {
+      "type": "string",
+      "description": "The specialty ID (optional)"
+    },
+    "follow_up_from_id": {
+      "type": "string",
+      "description": "The original appointment ID if this is a follow-up (optional)"
+    },
+    "reason": {
+      "type": "string",
+      "description": "Reason for the appointment (optional)"
+    },
+    "symptoms": {
+      "type": "string",
+      "description": "Patient's symptoms (optional)"
+    },
+    "severity_description": {
+      "type": "string",
+      "description": "Description of symptom severity (optional)"
+    },
+    "severity_rating": {
+      "type": "number",
+      "description": "Numeric severity rating 1-10 (optional)"
+    },
+    "urgency": {
+      "type": "string",
+      "description": "Urgency level: ROUTINE, URGENT, or ER (default: ROUTINE)"
+    }
+  },
+  "required": ["patient_id", "doctor_id", "start_at", "end_at"]
+}
+```
+
+### find_appointment
+
+Find existing confirmed appointments for a patient, optionally filtered by doctor name or reason.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "patient_id": {
+      "type": "string",
+      "description": "The patient's ID"
+    },
+    "doctor_name": {
+      "type": "string",
+      "description": "Doctor's name to filter by (optional)"
+    },
+    "reason": {
+      "type": "string",
+      "description": "Reason or symptoms to filter by (optional)"
+    }
+  },
+  "required": ["patient_id"]
+}
+```
+
+### reschedule
+
+Find new available slots for rescheduling an existing appointment. Does not finalize the reschedule — use reschedule_finalize to confirm the new slot.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "appointment_id": {
+      "type": "string",
+      "description": "The appointment ID to reschedule"
+    },
+    "preferred_day": {
+      "type": "string",
+      "description": "Preferred day or time range for the new appointment"
+    },
+    "preferred_time": {
+      "type": "string",
+      "description": "Preferred time of day for the new appointment"
+    }
+  },
+  "required": ["appointment_id"]
+}
+```
+
+### reschedule_finalize
+
+Atomically book a new appointment and cancel the original one in a single step. Used after the patient picks a new slot from the reschedule results.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "original_appointment_id": {
+      "type": "string",
+      "description": "The ID of the appointment being rescheduled"
+    },
+    "patient_id": {
+      "type": "string",
+      "description": "The patient's ID"
+    },
+    "doctor_id": {
+      "type": "string",
+      "description": "The doctor's ID for the new appointment"
+    },
+    "start_at": {
+      "type": "string",
+      "description": "ISO 8601 datetime for the new appointment start"
+    },
+    "end_at": {
+      "type": "string",
+      "description": "ISO 8601 datetime for the new appointment end"
+    },
+    "specialty_id": {
+      "type": "string",
+      "description": "The specialty ID (optional, inherited from original if omitted)"
+    },
+    "reason": {
+      "type": "string",
+      "description": "Reason for appointment (optional, inherited from original if omitted)"
+    }
+  },
+  "required": ["original_appointment_id", "patient_id", "doctor_id", "start_at", "end_at"]
+}
+```
+
+### cancel
+
+Cancel a confirmed appointment.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "appointment_id": {
+      "type": "string",
+      "description": "The appointment ID to cancel"
+    }
+  },
+  "required": ["appointment_id"]
+}
+```
 
 ## Running Tests
 

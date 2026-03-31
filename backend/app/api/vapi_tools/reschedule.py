@@ -4,9 +4,18 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
-from app.api.vapi_helpers import handle_tool_calls
+from datetime import datetime
+
+from app.api.vapi_helpers import get_call_id, handle_tool_calls
 from app.services.slot_engine import find_slots_for_specialty
+from app.services.time_utils import format_for_voice
 from app.supabase import get_supabase
+
+
+def _format_start(start_at: str) -> str:
+    """Convert a UTC start_at string to a voice-friendly local time label."""
+    dt = datetime.fromisoformat(start_at.replace("Z", "+00:00"))
+    return format_for_voice(dt)
 
 router = APIRouter()
 
@@ -60,6 +69,7 @@ def _handle_find_appointment(args: dict[str, Any], payload: dict[str, Any]) -> d
     if len(matches) == 1:
         appt = matches[0]
         doc_name = appt.get("doctors", {}).get("full_name", "your doctor")
+        label = _format_start(appt["start_at"])
         return {
             "status": "FOUND",
             "appointment": {
@@ -70,18 +80,21 @@ def _handle_find_appointment(args: dict[str, Any], payload: dict[str, Any]) -> d
                 "start_at": appt["start_at"],
                 "end_at": appt["end_at"],
                 "reason": appt.get("reason"),
+                "label": label,
             },
-            "message": f"I found your appointment with {doc_name}. Is this the one you mean?",
+            "message": f"I found your appointment with {doc_name} on {label}. Is this the one you mean?",
         }
 
     # Multiple matches — list them for the patient to pick
     options = []
     for a in matches[:5]:
         doc_name = a.get("doctors", {}).get("full_name", "Unknown")
+        label = _format_start(a["start_at"])
         options.append({
             "id": a["id"],
             "doctor_name": doc_name,
             "start_at": a["start_at"],
+            "label": label,
             "reason": a.get("reason"),
         })
 
@@ -92,6 +105,15 @@ def _handle_find_appointment(args: dict[str, Any], payload: dict[str, Any]) -> d
     }
 
 
+def _is_valid_uuid(val: str) -> bool:
+    import uuid
+    try:
+        uuid.UUID(val)
+        return True
+    except (ValueError, AttributeError):
+        return False
+
+
 def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     """Cancel old appointment and find new slots for same specialty."""
     appointment_id = args.get("appointment_id")
@@ -100,6 +122,9 @@ def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
 
     if not appointment_id:
         return {"status": "INVALID", "message": "I need to know which appointment to reschedule."}
+
+    if not _is_valid_uuid(appointment_id):
+        return {"status": "INVALID", "message": "The appointment ID is not valid. Please try finding the appointment again."}
 
     sb = get_supabase()
 
@@ -149,6 +174,114 @@ def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
     }
 
 
+def _handle_reschedule_finalize(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    """Atomically book a new slot and cancel the original appointment."""
+    original_appointment_id = args.get("original_appointment_id")
+    patient_id = args.get("patient_id")
+    doctor_id = args.get("doctor_id")
+    start_at = args.get("start_at")
+    end_at = args.get("end_at")
+
+    if not all([original_appointment_id, patient_id, doctor_id, start_at, end_at]):
+        return {"status": "INVALID", "message": "Missing required rescheduling information."}
+
+    for id_field, id_val in [("original_appointment_id", original_appointment_id),
+                              ("patient_id", patient_id), ("doctor_id", doctor_id)]:
+        if not _is_valid_uuid(id_val):
+            return {"status": "INVALID", "message": f"The {id_field} is not valid. Please try again."}
+
+    sb = get_supabase()
+
+    # Verify original appointment exists and is active
+    res = (
+        sb.table("appointments")
+        .select("id,status,specialty_id,reason,symptoms,severity_description,severity_rating,urgency")
+        .eq("id", original_appointment_id)
+        .limit(1)
+        .execute()
+    )
+    data = getattr(res, "data", None) or []
+    if not data:
+        return {"status": "NOT_FOUND", "message": "I couldn't find the original appointment."}
+
+    original = data[0]
+    if original["status"] != "CONFIRMED":
+        return {"status": "INVALID", "message": "The original appointment is no longer active."}
+
+    # Parse start time for confirmation message
+    try:
+        start_dt = datetime.fromisoformat(start_at.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return {"status": "INVALID", "message": "I couldn't understand the appointment time."}
+
+    # Get doctor name
+    doc_res = sb.table("doctors").select("full_name").eq("id", doctor_id).limit(1).execute()
+    doc_data = getattr(doc_res, "data", None) or []
+    doctor_name = doc_data[0]["full_name"] if doc_data else "your doctor"
+
+    vapi_call_id = get_call_id(payload)
+
+    # Book the new appointment
+    new_row: dict[str, Any] = {
+        "patient_id": patient_id,
+        "doctor_id": doctor_id,
+        "start_at": start_at,
+        "end_at": end_at,
+        "specialty_id": args.get("specialty_id") or original.get("specialty_id"),
+        "reason": args.get("reason") or original.get("reason"),
+        "symptoms": original.get("symptoms"),
+        "severity_description": original.get("severity_description"),
+        "severity_rating": original.get("severity_rating"),
+        "urgency": original.get("urgency", "ROUTINE"),
+        "status": "CONFIRMED",
+        "vapi_call_id": vapi_call_id,
+    }
+
+    try:
+        ins_res = sb.table("appointments").insert(new_row).execute()
+    except Exception as e:
+        if "unique_doctor_appointment" in str(e):
+            return {
+                "status": "TAKEN",
+                "message": "Sorry, that time was just booked. Would you like to pick another time?",
+            }
+        raise
+
+    ins_data = getattr(ins_res, "data", None) or []
+    if not ins_data:
+        return {"status": "ERROR", "message": "Something went wrong booking the new appointment."}
+
+    new_appointment = ins_data[0]
+
+    # Cancel the original appointment
+    try:
+        sb.table("appointments").update({"status": "CANCELLED"}).eq("id", original_appointment_id).execute()
+    except Exception:
+        # New appointment was booked but old one failed to cancel
+        when = format_for_voice(start_dt)
+        return {
+            "status": "RESCHEDULE_PARTIAL_FAILURE",
+            "appointment_id": new_appointment["id"],
+            "doctor_name": doctor_name,
+            "message": (
+                f"Your new appointment with {doctor_name} on {when} is confirmed, "
+                "but I wasn't able to cancel your original appointment automatically."
+            ),
+        }
+
+    when = format_for_voice(start_dt)
+    return {
+        "status": "RESCHEDULED",
+        "appointment_id": new_appointment["id"],
+        "original_appointment_id": original_appointment_id,
+        "doctor_name": doctor_name,
+        "message": (
+            f"Your appointment has been rescheduled. You're now booked with "
+            f"{doctor_name} on {when}. Your previous appointment has been cancelled."
+        ),
+    }
+
+
 @router.post("/find-appointment")
 async def find_appointment(request: Request):
     payload = await request.json()
@@ -159,3 +292,9 @@ async def find_appointment(request: Request):
 async def reschedule(request: Request):
     payload = await request.json()
     return handle_tool_calls(payload, _handle_reschedule)
+
+
+@router.post("/reschedule-finalize")
+async def reschedule_finalize(request: Request):
+    payload = await request.json()
+    return handle_tool_calls(payload, _handle_reschedule_finalize)

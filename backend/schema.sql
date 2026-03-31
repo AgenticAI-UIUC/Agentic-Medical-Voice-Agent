@@ -1,196 +1,98 @@
--- ============================================================
--- Medical Voice Agent — Final Schema
---
--- Built from the project workflow document. Supports:
---   - Patient registration with human-readable UIN
---   - Symptom triage → specialty matching (iterative)
---   - Specialty-based doctor lookup
---   - Computed slot availability (no pre-generated slots)
---   - Booking, rescheduling, cancellation
---   - Follow-up appointments linking to previous ones
---   - Local conversation/transcript storage for search
--- ============================================================
-
--- ============================================================
--- 1. Lookup / reference tables
--- ============================================================
-
--- Specialties (e.g. "Cardiology", "Dermatology", "General Practice")
-CREATE TABLE public.specialties (
-  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name        text NOT NULL UNIQUE,
-  description text
-);
-
--- Symptoms → specialty mapping (the "symptoms database" for triage)
--- Used by the triage tool to iteratively narrow down specialty
-CREATE TABLE public.symptom_specialty_map (
-  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  symptom       text NOT NULL,             -- e.g. "chest pain", "rash", "headache"
-  specialty_id  uuid NOT NULL REFERENCES public.specialties(id) ON DELETE CASCADE,
-  weight        real NOT NULL DEFAULT 1.0, -- higher = stronger signal for this specialty
-  follow_up_questions jsonb,               -- extra questions to ask if this symptom alone isn't enough
-  CONSTRAINT unique_symptom_specialty UNIQUE (symptom, specialty_id)
-);
-
--- ============================================================
--- 2. Doctors
--- ============================================================
-
-CREATE TABLE public.doctors (
-  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  full_name  text    NOT NULL,
-  image_url  text,
-  is_active  boolean NOT NULL DEFAULT true,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
--- Doctor ↔ Specialty (many-to-many)
-CREATE TABLE public.doctor_specialties (
-  doctor_id    uuid NOT NULL REFERENCES public.doctors(id) ON DELETE CASCADE,
-  specialty_id uuid NOT NULL REFERENCES public.specialties(id) ON DELETE CASCADE,
-  PRIMARY KEY (doctor_id, specialty_id)
-);
-
--- Doctor weekly availability template
--- Breaks modeled as separate rows: e.g. Mon 9:00–12:00 + Mon 13:00–17:00
-CREATE TABLE public.doctor_availability (
-  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  doctor_id    uuid    NOT NULL REFERENCES public.doctors(id) ON DELETE CASCADE,
-  day_of_week  integer NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),  -- 0=Sun, 6=Sat
-  start_time   time    NOT NULL,
-  end_time     time    NOT NULL,
-  slot_minutes integer NOT NULL DEFAULT 60 CHECK (slot_minutes > 0),
-  timezone     text    NOT NULL DEFAULT 'America/Chicago',
-  CONSTRAINT valid_window CHECK (start_time < end_time)
-);
-
--- Doctor blocks (one-off unavailability: sick days, meetings, vacations)
-CREATE TABLE public.doctor_blocks (
-  id        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  doctor_id uuid        NOT NULL REFERENCES public.doctors(id) ON DELETE CASCADE,
-  start_at  timestamptz NOT NULL,
-  end_at    timestamptz NOT NULL,
-  reason    text,
-  CONSTRAINT valid_block_window CHECK (start_at < end_at)
-);
-
--- ============================================================
--- 3. Patients
--- ============================================================
-
--- UIN is a 9-digit identifier patients speak over the phone
-CREATE TABLE public.patients (
-  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  uin        text        NOT NULL UNIQUE,  -- 9-digit, spoken over phone
-  full_name  text        NOT NULL,
-  phone      text        NOT NULL UNIQUE,
-  email      text,
-  allergies  text,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT phone_digits_only CHECK (phone ~ '^\d{10,15}$'),
-  CONSTRAINT uin_format CHECK (uin ~ '^\d{9}$')
-);
-
--- ============================================================
--- 4. Conversations (call transcripts stored locally for search)
--- ============================================================
-
-CREATE TABLE public.conversations (
-  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  patient_id uuid        REFERENCES public.patients(id),
-  call_id    text        NOT NULL UNIQUE,  -- Vapi call ID
-  transcript jsonb       NOT NULL DEFAULT '[]'::jsonb,
-  summary    text,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
--- ============================================================
--- 5. Appointments
--- ============================================================
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
 
 CREATE TABLE public.appointments (
-  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  patient_id          uuid        NOT NULL REFERENCES public.patients(id),
-  doctor_id           uuid        NOT NULL REFERENCES public.doctors(id),
-  specialty_id        uuid        REFERENCES public.specialties(id),
-  conversation_id     uuid        REFERENCES public.conversations(id),
-  -- Link to previous appointment (for follow-ups)
-  follow_up_from_id   uuid        REFERENCES public.appointments(id),
-  -- Time
-  start_at            timestamptz NOT NULL,
-  end_at              timestamptz NOT NULL,
-  -- Clinical info collected during triage
-  reason              text,         -- free-text reason for visit
-  symptoms            text,         -- symptoms described by patient
-  severity_description text,        -- patient's own words about severity
-  severity_rating     integer       CHECK (severity_rating BETWEEN 1 AND 10),
-  urgency             text          NOT NULL DEFAULT 'ROUTINE'
-                        CHECK (urgency IN ('ROUTINE', 'URGENT', 'ER')),
-  -- Status
-  status              text          NOT NULL DEFAULT 'CONFIRMED'
-                        CHECK (status IN ('CONFIRMED', 'CANCELLED', 'COMPLETED', 'NO_SHOW')),
-  -- Vapi metadata
-  vapi_call_id        text,
-  -- Timestamps
-  created_at          timestamptz NOT NULL DEFAULT now(),
-  updated_at          timestamptz NOT NULL DEFAULT now(),
-  -- Prevent double-booking
-  CONSTRAINT unique_doctor_appointment UNIQUE (doctor_id, start_at),
-  CONSTRAINT valid_appointment_window  CHECK (start_at < end_at)
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  patient_id uuid NOT NULL,
+  doctor_id uuid NOT NULL,
+  specialty_id uuid,
+  conversation_id uuid,
+  follow_up_from_id uuid,
+  start_at timestamp with time zone NOT NULL,
+  end_at timestamp with time zone NOT NULL,
+  reason text,
+  symptoms text,
+  severity_description text,
+  severity_rating integer CHECK (severity_rating >= 1 AND severity_rating <= 10),
+  urgency text NOT NULL DEFAULT 'ROUTINE'::text CHECK (urgency = ANY (ARRAY['ROUTINE'::text, 'URGENT'::text, 'ER'::text])),
+  status text NOT NULL DEFAULT 'CONFIRMED'::text CHECK (status = ANY (ARRAY['CONFIRMED'::text, 'CANCELLED'::text, 'COMPLETED'::text, 'NO_SHOW'::text])),
+  vapi_call_id text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT appointments_pkey PRIMARY KEY (id),
+  CONSTRAINT appointments_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES public.patients(id),
+  CONSTRAINT appointments_doctor_id_fkey FOREIGN KEY (doctor_id) REFERENCES public.doctors(id),
+  CONSTRAINT appointments_specialty_id_fkey FOREIGN KEY (specialty_id) REFERENCES public.specialties(id),
+  CONSTRAINT appointments_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id),
+  CONSTRAINT appointments_follow_up_from_id_fkey FOREIGN KEY (follow_up_from_id) REFERENCES public.appointments(id)
 );
-
--- ============================================================
--- 6. Indexes
--- ============================================================
-
--- Find booked appointments for a doctor in a date range (for computing available slots)
-CREATE INDEX idx_appointments_doctor_time
-  ON public.appointments (doctor_id, start_at, end_at)
-  WHERE status NOT IN ('CANCELLED');
-
--- Find blocks for a doctor in a date range
-CREATE INDEX idx_blocks_doctor_time
-  ON public.doctor_blocks (doctor_id, start_at, end_at);
-
--- Patient lookup by UIN (used on every call for identification)
-CREATE INDEX idx_patients_uin
-  ON public.patients (uin);
-
--- Patient lookup by phone
-CREATE INDEX idx_patients_phone
-  ON public.patients (phone);
-
--- Find appointments for a patient (for rescheduling/cancellation lookup)
-CREATE INDEX idx_appointments_patient
-  ON public.appointments (patient_id, created_at DESC)
-  WHERE status = 'CONFIRMED';
-
--- Symptom lookup for triage
-CREATE INDEX idx_symptom_map_symptom
-  ON public.symptom_specialty_map (symptom);
-
--- Doctor lookup by specialty (for finding available doctors)
-CREATE INDEX idx_doctor_specialties_specialty
-  ON public.doctor_specialties (specialty_id);
-
--- Conversation lookup by patient (for transcript search)
-CREATE INDEX idx_conversations_patient
-  ON public.conversations (patient_id, created_at DESC);
-
--- ============================================================
--- 7. Triggers
--- ============================================================
-
-CREATE OR REPLACE FUNCTION update_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = now();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_appointments_updated_at
-  BEFORE UPDATE ON public.appointments
-  FOR EACH ROW
-  EXECUTE FUNCTION update_updated_at();
+CREATE TABLE public.conversations (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  patient_id uuid,
+  call_id text NOT NULL UNIQUE,
+  transcript jsonb NOT NULL DEFAULT '[]'::jsonb,
+  summary text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT conversations_pkey PRIMARY KEY (id),
+  CONSTRAINT conversations_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES public.patients(id)
+);
+CREATE TABLE public.doctor_availability (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  doctor_id uuid NOT NULL,
+  day_of_week integer NOT NULL CHECK (day_of_week >= 0 AND day_of_week <= 6),
+  start_time time without time zone NOT NULL,
+  end_time time without time zone NOT NULL,
+  slot_minutes integer NOT NULL DEFAULT 60 CHECK (slot_minutes > 0),
+  timezone text NOT NULL DEFAULT 'America/Chicago'::text,
+  CONSTRAINT doctor_availability_pkey PRIMARY KEY (id),
+  CONSTRAINT doctor_availability_doctor_id_fkey FOREIGN KEY (doctor_id) REFERENCES public.doctors(id)
+);
+CREATE TABLE public.doctor_blocks (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  doctor_id uuid NOT NULL,
+  start_at timestamp with time zone NOT NULL,
+  end_at timestamp with time zone NOT NULL,
+  reason text,
+  CONSTRAINT doctor_blocks_pkey PRIMARY KEY (id),
+  CONSTRAINT doctor_blocks_doctor_id_fkey FOREIGN KEY (doctor_id) REFERENCES public.doctors(id)
+);
+CREATE TABLE public.doctor_specialties (
+  doctor_id uuid NOT NULL,
+  specialty_id uuid NOT NULL,
+  CONSTRAINT doctor_specialties_pkey PRIMARY KEY (doctor_id, specialty_id),
+  CONSTRAINT doctor_specialties_doctor_id_fkey FOREIGN KEY (doctor_id) REFERENCES public.doctors(id),
+  CONSTRAINT doctor_specialties_specialty_id_fkey FOREIGN KEY (specialty_id) REFERENCES public.specialties(id)
+);
+CREATE TABLE public.doctors (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  full_name text NOT NULL,
+  image_url text,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT doctors_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.patients (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  uin text NOT NULL UNIQUE CHECK (uin ~ '^\d{9}$'::text),
+  full_name text NOT NULL,
+  phone text NOT NULL UNIQUE CHECK (phone ~ '^\d+$'::text),
+  email text,
+  allergies text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT patients_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.specialties (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text NOT NULL UNIQUE,
+  description text,
+  CONSTRAINT specialties_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.symptom_specialty_map (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  symptom text NOT NULL,
+  specialty_id uuid NOT NULL,
+  weight real NOT NULL DEFAULT 1.0,
+  follow_up_questions jsonb,
+  CONSTRAINT symptom_specialty_map_pkey PRIMARY KEY (id),
+  CONSTRAINT symptom_specialty_map_specialty_id_fkey FOREIGN KEY (specialty_id) REFERENCES public.specialties(id)
+);

@@ -67,7 +67,7 @@ def _register_patient(args: dict[str, Any], payload: dict[str, Any]) -> dict[str
         return {"status": "INVALID", "message": "I need your 9-digit university UIN to register you."}
     if not full_name:
         return {"status": "INVALID", "message": "I need your full name to register you."}
-    if not phone or len(phone) < 10:
+    if not phone:
         return {"status": "INVALID", "message": "I need a valid phone number to register you."}
 
     sb = get_supabase()
