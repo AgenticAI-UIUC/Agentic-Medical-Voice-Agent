@@ -17,7 +17,7 @@ There are no pre-generated appointment slots. Available times are computed on th
 ## Conversation flow
 
 1. **Identify patient** — Ask if new or returning. New patients are registered with a 9-digit UIN. Returning patients provide their UIN for lookup.
-2. **Check for follow-up** — If this is a follow-up, find the original appointment and skip to scheduling with the same doctor.
+2. **Check for follow-up** — If this is a follow-up, find the original appointment, including past completed visits when needed, and skip to scheduling with the same doctor.
 3. **Triage** — Collect symptoms, query the symptom-specialty mapping table, and iteratively narrow down the right specialty (up to 5 rounds of follow-up questions). Patient can override.
 4. **Find slots** — Compute available appointment times for doctors of the matched specialty within the patient's preferred time window.
 5. **Book** — Confirm and insert the appointment. A unique constraint on `(doctor_id, start_at)` prevents double-booking at the database level.

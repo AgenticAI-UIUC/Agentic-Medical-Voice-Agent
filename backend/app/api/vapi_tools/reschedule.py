@@ -7,8 +7,8 @@ from fastapi import APIRouter, Request
 from datetime import datetime
 
 from app.api.vapi_helpers import get_call_id, handle_tool_calls
-from app.services.slot_engine import find_slots_for_specialty, validate_slot
-from app.services.time_utils import format_for_voice, now_utc
+from app.services.slot_engine import find_slots_for_specialty, validate_slot, is_next_available_request
+from app.services.time_utils import format_for_voice, now_utc, parse_time_bucket
 from app.supabase import get_supabase
 
 
@@ -17,7 +17,26 @@ def _format_start(start_at: str) -> str:
     dt = datetime.fromisoformat(start_at.replace("Z", "+00:00"))
     return format_for_voice(dt)
 
+
+def _parse_start(start_at: str) -> datetime:
+    return datetime.fromisoformat(start_at.replace("Z", "+00:00"))
+
 router = APIRouter()
+
+
+def _should_retry_with_any(preferred_day: str, preferred_time: str) -> bool:
+    return is_next_available_request(preferred_day) and parse_time_bucket(preferred_time) != "any"
+
+
+def _relaxed_reschedule_message(preferred_time: str, slots: list[dict[str, Any]]) -> str:
+    labels = [s["label"] for s in slots[:3]]
+    spoken = labels[0] if len(labels) == 1 else ", ".join(labels[:-1]) + " or " + labels[-1]
+    bucket = parse_time_bucket(preferred_time)
+    bucket_text = "morning" if bucket == "morning" else "afternoon"
+    return (
+        f"I don't see any {bucket_text} openings as soon as possible, "
+        f"but I can reschedule you to {spoken}. Which one works?"
+    )
 
 
 def _handle_find_appointment(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
@@ -28,6 +47,7 @@ def _handle_find_appointment(args: dict[str, Any], payload: dict[str, Any]) -> d
 
     doctor_name = (args.get("doctor_name") or "").strip().lower()
     reason = (args.get("reason") or "").strip().lower()
+    include_past = bool(args.get("include_past"))
 
     sb = get_supabase()
 
@@ -35,19 +55,34 @@ def _handle_find_appointment(args: dict[str, Any], payload: dict[str, Any]) -> d
         sb.table("appointments")
         .select("id,doctor_id,specialty_id,start_at,end_at,reason,symptoms,status,doctors(full_name)")
         .eq("patient_id", patient_id)
-        .eq("status", "CONFIRMED")
-        .gte("start_at", now_utc().isoformat())
         .order("start_at", desc=True)
-        .limit(10)
+        .limit(20)
     )
 
     res = query.execute()
     appointments = getattr(res, "data", None) or []
+    now = now_utc()
+
+    if include_past:
+        appointments = [
+            a for a in appointments
+            if a.get("status") in {"CONFIRMED", "COMPLETED"}
+        ]
+    else:
+        appointments = [
+            a for a in appointments
+            if a.get("status") == "CONFIRMED"
+            and _parse_start(a["start_at"]) >= now
+        ]
 
     if not appointments:
         return {
             "status": "NO_APPOINTMENTS",
-            "message": "I don't see any upcoming appointments on file for you.",
+            "message": (
+                "I couldn't find a previous appointment on file for that follow-up."
+                if include_past
+                else "I don't see any upcoming appointments on file for you."
+            ),
         }
 
     # Try to narrow down by doctor name and/or reason
@@ -125,28 +160,27 @@ def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
     if not appointment_id:
         return {"status": "INVALID", "message": "I need to know which appointment to reschedule."}
 
-    if not patient_id:
-        return {"status": "INVALID", "message": "I need your patient information first."}
-
     if not _is_valid_uuid(appointment_id):
         return {"status": "INVALID", "message": "The appointment ID is not valid. Please try finding the appointment again."}
 
     sb = get_supabase()
 
     # Fetch the original appointment — verify patient ownership
-    res = (
+    query = (
         sb.table("appointments")
-        .select("id,specialty_id,doctor_id,status")
+        .select("id,patient_id,specialty_id,doctor_id,status")
         .eq("id", appointment_id)
-        .eq("patient_id", patient_id)
-        .limit(1)
-        .execute()
     )
+    if patient_id:
+        query = query.eq("patient_id", patient_id)
+
+    res = query.limit(1).execute()
     data = getattr(res, "data", None) or []
     if not data:
         return {"status": "NOT_FOUND", "message": "I couldn't find that appointment."}
 
     appt = data[0]
+    resolved_patient_id = patient_id or appt.get("patient_id")
     if appt["status"] != "CONFIRMED":
         return {"status": "INVALID", "message": "That appointment isn't active and can't be rescheduled."}
 
@@ -162,10 +196,28 @@ def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
         for s in slots:
             s["doctor_id"] = doctor_id
 
+    if not slots and _should_retry_with_any(preferred_day, preferred_time):
+        if specialty_id:
+            slots = find_slots_for_specialty(specialty_id, preferred_day, "any")
+        else:
+            from app.services.slot_engine import find_available_slots
+            slots = find_available_slots(doctor_id, preferred_day, "any")
+            for s in slots:
+                s["doctor_id"] = doctor_id
+        if slots:
+            return {
+                "status": "SLOTS_AVAILABLE",
+                "original_appointment_id": appointment_id,
+                "patient_id": resolved_patient_id,
+                "slots": slots,
+                "message": _relaxed_reschedule_message(preferred_time, slots),
+            }
+
     if not slots:
         return {
             "status": "NO_SLOTS",
             "original_appointment_id": appointment_id,
+            "patient_id": resolved_patient_id,
             "message": "I couldn't find any available times for rescheduling. Would you like to try a different window?",
             "slots": [],
         }
@@ -175,6 +227,7 @@ def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
     return {
         "status": "SLOTS_AVAILABLE",
         "original_appointment_id": appointment_id,
+        "patient_id": resolved_patient_id,
         "slots": slots,
         "message": f"I can reschedule you to {spoken}. Which one works?",
     }

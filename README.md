@@ -17,6 +17,8 @@ Patient calls in
 
 The voice agent uses Vapi tool calling to invoke backend endpoints at each step. Slots are computed on-the-fly from weekly availability templates — no cron jobs or pre-generated data.
 
+Privacy rule: the voice assistant is self-service only. If a caller says they are acting for someone else, it should refuse to look up, book, reschedule, or cancel that other person's appointment and offer transfer to staff instead.
+
 ## Conversation Workflows
 
 ### New Appointment (Booking)
@@ -24,9 +26,23 @@ The voice agent uses Vapi tool calling to invoke backend endpoints at each step.
 ```
 Patient: "I'd like to make an appointment"
   │
+  ├─ Follow-up appointment?
+  │   ├─ Yes → Skip new/returning question → Collect UIN → identify_patient
+  │   └─ No  → continue below
+  │
   ├─ New patient?
-  │   ├─ Yes → Collect UIN, name, phone → register_patient
+  │   ├─ Yes → Say "Before I schedule that appointment, I need a few details to set you up." → Collect confirmed UIN, name, confirmed phone → register_patient
   │   └─ No  → Collect UIN → identify_patient
+  │
+  │  After identify/register: continue the booking flow directly
+  │  Do not reset with "What can I help you with today?"
+  │  If newly registered this call, skip follow-up screening and go straight to symptoms
+  │  If a new-patient registration attempt returns `ALREADY_EXISTS`, treat it as a duplicate UIN case
+  │  If the UIN belongs to the wrong person and the caller denies that identity, keep the collected name/phone, confirm the corrected UIN, and retry `register_patient`
+  │  Shared phone numbers are allowed; do not treat a repeated phone number as a registration conflict
+  │  After the caller confirms a UIN readback, do not do a second digit-count check yourself; let the tool response validate it
+  │  If the caller already said this is a follow-up, preserve that and go straight into follow-up details after identification
+  │  Do not call register_patient until all required fields are collected
   │
   ▼
 Symptom Collection
@@ -77,8 +93,12 @@ Identify Patient (UIN → identify_patient)
   │
   ▼
 Find Appointment (find_appointment)
+  │  If the caller says "I don't remember which one",
+  │  call find_appointment with just patient_id
   │  ├─ Single match → Confirm with patient
-  │  ├─ Multiple → List options, patient picks one
+  │  ├─ Multiple → List options, patient picks one,
+  │  │             briefly restate the chosen doctor/date/time,
+  │  │             then ask for reschedule preferences
   │  └─ None found → Offer to book new
   │
   ▼
@@ -146,7 +166,7 @@ Confirm Cancellation
 - **Confidence-based triage.** Symptoms are scored against a weighted mapping table. If the top candidate's confidence exceeds 60%, a specialty is recommended. Otherwise, follow-up questions are asked (up to 5 rounds).
 - **Atomic rescheduling.** `reschedule_finalize` books the new slot and cancels the old one in a single operation. If the cancel fails, the patient gets a partial-failure notice instead of a silent error.
 - **Timezone-aware formatting.** All times stored in UTC. Voice labels are converted to the clinic's local timezone (`CLINIC_TIMEZONE`) for natural readback — "Wednesday, April 8 at 1 PM" instead of raw ISO strings.
-- **Backend validates, not the LLM.** The system prompt tells the voice agent not to count digits or validate phone numbers itself — the backend handles all validation and returns clear error messages for the LLM to relay.
+- **Backend validates, not the LLM.** The system prompt tells the voice agent not to count digits or validate phone numbers itself — the backend handles all validation and returns clear error messages for the LLM to relay. The assistant should repeat the tool's actual `message`, not invent a new reason such as claiming a confirmed 9-digit UIN is only 8 digits.
 
 ## Tech Stack
 
@@ -241,7 +261,31 @@ Optionally load seed data for local development:
 psql "$SUPABASE_DB_URL" -f backend/seed.sql
 ```
 
-The seed data includes 10 specialties, 8 doctors with weekly schedules, 50+ symptom mappings, and 5 test patients.
+The seed data includes 10 specialties, 8 doctors with weekly schedules, 50+ symptom mappings, 5 test patients, 4 sample appointments, and 2 doctor blocks.
+
+`backend/seed.sql` sets the SQL session timezone to `America/Chicago` so seeded appointments and doctor blocks represent clinic-local demo times. This keeps the database timestamps aligned with the times the voice agent reads back to callers.
+
+If you want to wipe only this app's data and reseed without rebuilding the schema, run this in the Supabase SQL Editor first:
+
+```sql
+TRUNCATE TABLE
+  public.appointments,
+  public.conversations,
+  public.doctor_blocks,
+  public.doctor_availability,
+  public.doctor_specialties,
+  public.symptom_specialty_map,
+  public.patients,
+  public.doctors,
+  public.specialties
+RESTART IDENTITY CASCADE;
+```
+
+Then rerun:
+
+```bash
+psql "$SUPABASE_DB_URL" -f backend/seed.sql
+```
 
 ### 3. Start the backend
 
@@ -409,6 +453,8 @@ The slot engine computes available appointment times on-the-fly from weekly temp
 
 These are the tools configured in the Vapi dashboard. Each tool calls a backend endpoint via Vapi's server URL.
 
+Prompt/tool alignment note: if the live assistant still self-validates UIN length or invents `INVALID` reasons after you update this repo, refresh the system prompt in the Vapi dashboard so the hosted assistant matches the checked-in prompt.
+
 ### identify_patient
 
 Look up an existing patient by their 9-digit university UIN. Returns the patient record if found, or an error if the UIN is invalid or not registered.
@@ -429,6 +475,10 @@ Look up an existing patient by their 9-digit university UIN. Returns the patient
 ### register_patient
 
 Register a new patient in the system with their UIN, name, and phone number.
+
+Call this only after the assistant has already collected all three required fields: confirmed `uin`, `full_name`, and confirmed `phone`.
+
+If a new-patient flow hits `ALREADY_EXISTS`, treat it as a duplicate-UIN case: confirm the corrected UIN and retry `register_patient` with the already collected name/phone. Shared phone numbers are allowed and should not block registration.
 
 ```json
 {
@@ -509,7 +559,7 @@ Find available appointment slots for a given specialty or doctor within a prefer
     },
     "preferred_day": {
       "type": "string",
-      "description": "Preferred day or time range, e.g. 'tomorrow', 'next Monday', 'this week'"
+      "description": "Preferred day or time range, e.g. 'tomorrow', 'next Monday', 'this week', 'as soon as possible', or 'soonest available'"
     },
     "preferred_time": {
       "type": "string",
@@ -595,6 +645,10 @@ Find existing confirmed appointments for a patient, optionally filtered by docto
     "reason": {
       "type": "string",
       "description": "Reason or symptoms to filter by (optional)"
+    },
+    "include_past": {
+      "type": "boolean",
+      "description": "Set to true for follow-up lookups when the original appointment may be a past completed visit (optional)"
     }
   },
   "required": ["patient_id"]
@@ -612,6 +666,10 @@ Find new available slots for rescheduling an existing appointment. Does not fina
     "appointment_id": {
       "type": "string",
       "description": "The appointment ID to reschedule"
+    },
+    "patient_id": {
+      "type": "string",
+      "description": "The patient's ID from identification (recommended when available)"
     },
     "preferred_day": {
       "type": "string",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, time, timedelta, timezone
+import re
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -21,7 +22,17 @@ from app.supabase import get_supabase
 NEXT_AVAILABLE_ALIASES = {
     "next available day", "next available date", "next available",
     "soonest", "earliest", "earliest available",
+    "as soon as possible", "asap", "soonest available",
 }
+
+
+def _normalize_preference_text(value: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", (value or "").strip().lower())).strip()
+
+
+def is_next_available_request(preferred_day: str) -> bool:
+    normalized = _normalize_preference_text(preferred_day)
+    return any(alias in normalized for alias in NEXT_AVAILABLE_ALIASES)
 
 
 def _fetch_availability(doctor_id: str) -> list[dict[str, Any]]:
@@ -251,11 +262,10 @@ def find_available_slots(
     now = now_utc()
     horizon = now + timedelta(days=settings.SCHEDULING_HORIZON_DAYS)
 
-    day_raw = (preferred_day or "").strip().lower()
     bucket = parse_time_bucket(preferred_time)
 
     # Determine UTC search window
-    if day_raw in NEXT_AVAILABLE_ALIASES:
+    if is_next_available_request(preferred_day):
         w_start, w_end = now, horizon
     else:
         dr = parse_preferred_day(preferred_day)

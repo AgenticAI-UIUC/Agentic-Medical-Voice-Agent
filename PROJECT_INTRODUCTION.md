@@ -42,14 +42,14 @@ Instead of asking patients to navigate menus or wait on a human scheduler, the s
 
 ## 3. Product experience in one paragraph
 
-The intended patient experience is: call the clinic, confirm identity or register, describe symptoms, get routed to an appropriate specialty unless the symptoms look emergent, hear a few appointment options in natural language, confirm a slot, and finish the call with a transcript saved to the database. For existing appointments, the same voice assistant can locate a booked visit and either cancel it or swap it for a new slot.
+The intended patient experience is: call the clinic, state what you need, confirm identity or complete first-time registration as part of that same request, describe symptoms, get routed to an appropriate specialty unless the symptoms look emergent, hear a few appointment options in natural language, confirm a slot, and finish the call with a transcript saved to the database. For existing appointments, the same voice assistant can locate a booked visit and either cancel it or swap it for a new slot.
 
 ## 4. Core flows the repo is built around
 
 ### New appointment flow
 
 1. Determine whether the caller is new or returning.
-2. Register or identify the patient using a 9-digit UIN.
+2. Register or identify the patient using a 9-digit UIN while preserving the caller's original booking intent. If they are truly new and were just registered, continue straight into symptom collection rather than asking about follow-up care.
 3. Collect symptoms and severity.
 4. Run triage to determine a specialty.
 5. Ask for scheduling preferences such as preferred day and morning vs afternoon.
@@ -226,7 +226,7 @@ Key behavior:
 - strips punctuation from phone numbers
 - looks up patients by UIN
 - registers new patients with validation
-- prevents duplicate UINs and duplicate phone records
+- prevents duplicate UINs while allowing shared phone numbers
 
 This is important because the voice layer is intentionally told not to perform its own strict validation logic.
 
@@ -467,7 +467,7 @@ Stores patient records with:
 
 - internal UUID primary key
 - 9-digit unique UIN
-- unique phone number
+- phone number (shared numbers allowed)
 - name
 - optional email
 - optional allergies

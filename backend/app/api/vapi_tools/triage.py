@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -13,7 +14,11 @@ router = APIRouter()
 def _handle_triage(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     symptoms = args.get("symptoms") or []
     if isinstance(symptoms, str):
-        symptoms = [s.strip() for s in symptoms.split(",") if s.strip()]
+        symptoms = [
+            s.strip(" .")
+            for s in re.split(r",|\band\b", symptoms, flags=re.IGNORECASE)
+            if s.strip(" .")
+        ]
 
     answers = args.get("answers") or {}
 

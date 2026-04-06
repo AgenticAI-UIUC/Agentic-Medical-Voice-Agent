@@ -100,6 +100,48 @@ def test_find_available_slots_filters_past_booked_and_blocked(monkeypatch: pytes
     ]
 
 
+def test_find_available_slots_treats_as_soon_as_possible_as_next_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixed_now = datetime(2026, 4, 6, 18, 30, tzinfo=timezone.utc)
+    theoretical_slots = [
+        (
+            datetime(2026, 4, 6, 15, 0, tzinfo=timezone.utc),
+            datetime(2026, 4, 6, 16, 0, tzinfo=timezone.utc),
+        ),
+        (
+            datetime(2026, 4, 7, 14, 0, tzinfo=timezone.utc),
+            datetime(2026, 4, 7, 15, 0, tzinfo=timezone.utc),
+        ),
+        (
+            datetime(2026, 4, 7, 15, 0, tzinfo=timezone.utc),
+            datetime(2026, 4, 7, 16, 0, tzinfo=timezone.utc),
+        ),
+    ]
+
+    monkeypatch.setattr(slot_engine, "now_utc", lambda: fixed_now)
+    monkeypatch.setattr(slot_engine, "_fetch_availability", lambda doctor_id: [{"configured": True}])
+    monkeypatch.setattr(slot_engine, "_fetch_booked", lambda doctor_id, start_utc, end_utc: set())
+    monkeypatch.setattr(slot_engine, "_fetch_blocks", lambda doctor_id, start_utc, end_utc: [])
+    monkeypatch.setattr(slot_engine, "_generate_theoretical_slots", lambda *args: theoretical_slots)
+    monkeypatch.setattr(slot_engine, "format_for_voice", lambda dt: f"slot-{dt.hour}")
+
+    slots = slot_engine.find_available_slots("doc-1", "as soon as possible, please", "morning", max_slots=2)
+
+    assert slots == [
+        {
+            "start_at": "2026-04-07T14:00:00+00:00",
+            "end_at": "2026-04-07T15:00:00+00:00",
+            "label": "slot-14",
+        },
+        {
+            "start_at": "2026-04-07T15:00:00+00:00",
+            "end_at": "2026-04-07T16:00:00+00:00",
+            "label": "slot-15",
+        },
+    ]
+
+
 def test_find_slots_for_specialty_combines_active_doctors_and_sorts(monkeypatch: pytest.MonkeyPatch) -> None:
     specialty_rows = [
         {"doctor_id": "doc-b", "doctors": {"id": "doc-b", "full_name": "Dr. Beta", "is_active": True}},

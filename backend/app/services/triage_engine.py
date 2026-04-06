@@ -106,6 +106,49 @@ _NEGATIVE_WORDS = frozenset({
 _ANSWER_BOOST = 1.5
 _ANSWER_PENALTY = 0.6  # multiplicative – shrinks rather than removes
 
+_SYMPTOM_ALIASES: dict[str, list[str]] = {
+    "migraine": ["headache"],
+    "migraines": ["migraine", "headache"],
+    "headaches": ["headache"],
+    "nauseous": ["nausea"],
+}
+
+
+def _normalize_symptom_text(symptom: str) -> str:
+    normalized = re.sub(r"[^a-z0-9\s]", " ", symptom.lower())
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
+def _singularize_symptom(symptom: str) -> str:
+    if symptom.endswith("ies") and len(symptom) > 3:
+        return f"{symptom[:-3]}y"
+    if symptom.endswith("s") and not symptom.endswith("ss") and len(symptom) > 3:
+        return symptom[:-1]
+    return symptom
+
+
+def _symptom_query_terms(symptom: str) -> list[str]:
+    base = _normalize_symptom_text(symptom)
+    if not base:
+        return []
+
+    terms: list[str] = [base]
+    singular = _singularize_symptom(base)
+    if singular != base:
+        terms.append(singular)
+
+    for term in list(terms):
+        terms.extend(_SYMPTOM_ALIASES.get(term, []))
+
+    seen: set[str] = set()
+    ordered_terms: list[str] = []
+    for term in terms:
+        if term and term not in seen:
+            seen.add(term)
+            ordered_terms.append(term)
+    return ordered_terms
+
 
 def _classify_answer(answer: str) -> float:
     """Return +1 for affirmative, -1 for negative, 0 for neutral."""
@@ -189,15 +232,22 @@ def triage_symptoms(
     # Query all matching symptom rows
     # Use ilike for case-insensitive partial matching
     all_rows: list[dict[str, Any]] = []
+    seen_rows: set[tuple[str, str]] = set()
     for symptom in symptoms:
-        res = (
-            sb.table("symptom_specialty_map")
-            .select("symptom,specialty_id,weight,follow_up_questions,specialties(id,name)")
-            .ilike("symptom", f"%{symptom.strip()}%")
-            .execute()
-        )
-        rows = getattr(res, "data", None) or []
-        all_rows.extend(rows)
+        for term in _symptom_query_terms(symptom):
+            res = (
+                sb.table("symptom_specialty_map")
+                .select("symptom,specialty_id,weight,follow_up_questions,specialties(id,name)")
+                .ilike("symptom", f"%{term}%")
+                .execute()
+            )
+            rows = getattr(res, "data", None) or []
+            for row in rows:
+                row_key = (str(row.get("symptom") or ""), str(row.get("specialty_id") or ""))
+                if row_key in seen_rows:
+                    continue
+                seen_rows.add(row_key)
+                all_rows.append(row)
 
     if not all_rows:
         return TriageResult(

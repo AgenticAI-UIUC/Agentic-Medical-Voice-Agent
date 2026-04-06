@@ -18,14 +18,21 @@ def test_lookup_patient_requires_uin() -> None:
     assert "didn't catch your UIN" in result["message"]
 
 
+def test_lookup_patient_rejects_non_9_digit_uin() -> None:
+    result = identify_patient._lookup_patient({"uin": "one two three"}, {})
+
+    assert result["status"] == "INVALID"
+    assert "9-digit university UIN" in result["message"]
+
+
 def test_lookup_patient_returns_not_found_with_normalized_uin(monkeypatch: pytest.MonkeyPatch) -> None:
     sb = MockSupabase(tables={"patients": [MockQuery(data=[])]})
     monkeypatch.setattr(identify_patient, "get_supabase", lambda: sb)
 
-    result = identify_patient._lookup_patient({"uin": "one two three"}, {})
+    result = identify_patient._lookup_patient({"uin": "one two three four five six seven eight nine"}, {})
 
     assert result["status"] == "NOT_FOUND"
-    assert result["uin_searched"] == "123"
+    assert result["uin_searched"] == "123456789"
 
 
 def test_lookup_patient_returns_patient_record(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -78,10 +85,10 @@ def test_register_patient_returns_existing_patient_for_duplicate_uin(monkeypatch
     assert result["patient_id"] == "patient-1"
 
 
-def test_register_patient_returns_existing_patient_for_duplicate_phone(monkeypatch: pytest.MonkeyPatch) -> None:
-    empty = MockQuery(data=[])
-    existing_phone = MockQuery(data=[{"id": "patient-2", "uin": "987654321", "full_name": "Taylor"}])
-    sb = MockSupabase(tables={"patients": [empty, existing_phone]})
+def test_register_patient_allows_duplicate_phone(monkeypatch: pytest.MonkeyPatch) -> None:
+    no_uin_match = MockQuery(data=[])
+    insert_query = MockQuery(data=[{"id": "patient-2"}])
+    sb = MockSupabase(tables={"patients": [no_uin_match, insert_query]})
     monkeypatch.setattr(identify_patient, "get_supabase", lambda: sb)
 
     result = identify_patient._register_patient(
@@ -89,15 +96,15 @@ def test_register_patient_returns_existing_patient_for_duplicate_phone(monkeypat
         {},
     )
 
-    assert result["status"] == "ALREADY_EXISTS"
-    assert result["full_name"] == "Taylor"
+    assert result["status"] == "REGISTERED"
+    assert result["patient_id"] == "patient-2"
+    assert insert_query.inserted_rows[0]["phone"] == "2175551212"
 
 
 def test_register_patient_inserts_new_patient(monkeypatch: pytest.MonkeyPatch) -> None:
     no_uin_match = MockQuery(data=[])
-    no_phone_match = MockQuery(data=[])
     insert_query = MockQuery(data=[{"id": "patient-3"}])
-    sb = MockSupabase(tables={"patients": [no_uin_match, no_phone_match, insert_query]})
+    sb = MockSupabase(tables={"patients": [no_uin_match, insert_query]})
     monkeypatch.setattr(identify_patient, "get_supabase", lambda: sb)
 
     result = identify_patient._register_patient(
@@ -113,6 +120,7 @@ def test_register_patient_inserts_new_patient(monkeypatch: pytest.MonkeyPatch) -
 
     assert result["status"] == "REGISTERED"
     assert result["patient_id"] == "patient-3"
+    assert result["message"] == "Registration complete for Sam Student."
     assert insert_query.inserted_rows[0] == {
         "uin": "123456789",
         "full_name": "Sam Student",

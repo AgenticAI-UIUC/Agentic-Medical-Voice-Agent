@@ -41,6 +41,94 @@ def test_handle_find_slots_formats_specialty_results(monkeypatch: pytest.MonkeyP
     assert "Monday at 9 AM with Dr. Alpha or Monday at 10 AM with Dr. Beta" in result["message"]
 
 
+def test_handle_find_slots_formats_same_doctor_results_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        find_slots,
+        "find_slots_for_specialty",
+        lambda *args, **kwargs: [
+            {"label": "Wednesday, April 8 at 2 PM", "doctor_name": "Dr. Priya Patel"},
+            {"label": "Wednesday, April 8 at 3 PM", "doctor_name": "Dr. Priya Patel"},
+            {"label": "Wednesday, April 8 at 4 PM", "doctor_name": "Dr. Priya Patel"},
+        ],
+    )
+
+    result = find_slots._handle_find_slots({"specialty_id": "neuro", "preferred_day": "today"}, {})
+
+    assert result["status"] == "OK"
+    assert "with Dr. Priya Patel on Wednesday, April 8 at 2 PM, 3 PM or 4 PM" in result["message"]
+    assert result["message"].count("Dr. Priya Patel") == 1
+    assert result["message"].count("Wednesday, April 8") == 1
+
+
+def test_handle_find_slots_relaxes_asap_time_bucket_when_no_exact_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str, str]] = []
+
+    def fake_find_slots_for_specialty(
+        specialty_id: str,
+        preferred_day: str,
+        preferred_time: str,
+    ) -> list[dict[str, str]]:
+        calls.append((specialty_id, preferred_day, preferred_time))
+        if preferred_time == "morning":
+            return []
+        return [
+            {"label": "Wednesday, April 8 at 1 PM", "doctor_name": "Dr. Patel"},
+            {"label": "Thursday, April 9 at 2 PM", "doctor_name": "Dr. Patel"},
+        ]
+
+    monkeypatch.setattr(find_slots, "find_slots_for_specialty", fake_find_slots_for_specialty)
+
+    result = find_slots._handle_find_slots(
+        {
+            "specialty_id": "neuro",
+            "preferred_day": "as soon as possible, please",
+            "preferred_time": "morning",
+        },
+        {},
+    )
+
+    assert result["status"] == "OK"
+    assert calls == [
+        ("neuro", "as soon as possible, please", "morning"),
+        ("neuro", "as soon as possible, please", "any"),
+    ]
+    assert "don't see any morning openings as soon as possible" in result["message"]
+    assert "with Dr. Patel: Wednesday, April 8 at 1 PM or Thursday, April 9 at 2 PM" in result["message"]
+    assert result["message"].count("Dr. Patel") == 1
+
+
+def test_handle_find_slots_relaxed_message_collapses_same_day_slots(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_find_slots_for_specialty(
+        specialty_id: str,
+        preferred_day: str,
+        preferred_time: str,
+    ) -> list[dict[str, str]]:
+        if preferred_time == "morning":
+            return []
+        return [
+            {"label": "Wednesday, April 8 at 2 PM", "doctor_name": "Dr. Patel"},
+            {"label": "Wednesday, April 8 at 3 PM", "doctor_name": "Dr. Patel"},
+            {"label": "Wednesday, April 8 at 4 PM", "doctor_name": "Dr. Patel"},
+        ]
+
+    monkeypatch.setattr(find_slots, "find_slots_for_specialty", fake_find_slots_for_specialty)
+
+    result = find_slots._handle_find_slots(
+        {
+            "specialty_id": "neuro",
+            "preferred_day": "as soon as possible",
+            "preferred_time": "morning",
+        },
+        {},
+    )
+
+    assert result["status"] == "OK"
+    assert "with Dr. Patel on Wednesday, April 8 at 2 PM, 3 PM or 4 PM" in result["message"]
+    assert result["message"].count("Wednesday, April 8") == 1
+
+
 @pytest.mark.parametrize(
     ("args", "expected_message"),
     [

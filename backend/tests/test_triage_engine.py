@@ -70,6 +70,54 @@ def test_triage_symptoms_returns_confident_specialty(monkeypatch: pytest.MonkeyP
     assert result.top_candidates[0]["specialty_id"] == "derm"
 
 
+def test_triage_symptoms_maps_migraines_and_nausea_to_neurology(monkeypatch: pytest.MonkeyPatch) -> None:
+    migraine_rows = [
+        {
+            "symptom": "migraine",
+            "specialty_id": "neuro",
+            "weight": 2,
+            "follow_up_questions": ["Do you see visual disturbances before the migraine?"],
+            "specialties": {"id": "neuro", "name": "Neurology"},
+        }
+    ]
+    headache_rows = [
+        {
+            "symptom": "headache",
+            "specialty_id": "neuro",
+            "weight": 1.5,
+            "follow_up_questions": ["Where is the pain located?"],
+            "specialties": {"id": "neuro", "name": "Neurology"},
+        }
+    ]
+    nausea_rows = [
+        {
+            "symptom": "nausea",
+            "specialty_id": "gastro",
+            "weight": 1.5,
+            "follow_up_questions": ["Have you been vomiting?"],
+            "specialties": {"id": "gastro", "name": "Gastroenterology"},
+        }
+    ]
+    sb = MockSupabase(
+        tables={
+            "symptom_specialty_map": [
+                MockQuery(data=[]),
+                MockQuery(data=migraine_rows),
+                MockQuery(data=headache_rows),
+                MockQuery(data=nausea_rows),
+            ]
+        }
+    )
+    monkeypatch.setattr(triage_engine, "get_supabase", lambda: sb)
+
+    result = triage_engine.triage_symptoms(["migraines", "nausea"])
+
+    assert result.specialty_determined is True
+    assert result.specialty_id == "neuro"
+    assert result.specialty_name == "Neurology"
+    assert result.confidence == 0.7
+
+
 def test_triage_symptoms_uses_answers_to_break_ties(monkeypatch: pytest.MonkeyPatch) -> None:
     rows = [
         {

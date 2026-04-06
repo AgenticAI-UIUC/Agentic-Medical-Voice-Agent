@@ -46,7 +46,7 @@ Patient (Phone) ↔ Vapi.ai (Voice + LLM + Tool Calling) ↔ FastAPI Backend ↔
 ```
 
 ### Three conversation flows
-1. **New Appointment** — identify/register patient → collect symptoms → triage (confidence-based specialty matching) → find available slots → book
+1. **New Appointment** — capture booking intent → identify/register patient without resetting the conversation → if newly registered, go straight to symptoms; if existing patient, optionally handle follow-up context → triage (confidence-based specialty matching) → find available slots → book
 2. **Reschedule** — identify patient → find existing appointment → collect new preferences → find new slots → atomic swap (book new + cancel old)
 3. **Cancel** — identify patient → find appointment → confirm → cancel
 
