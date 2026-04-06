@@ -8,7 +8,12 @@
 --
 -- All UUIDs are hardcoded so the script is idempotent
 -- (safe to run multiple times with ON CONFLICT DO NOTHING).
+-- Timestamps in this seed are intended to represent clinic-local times
+-- in America/Chicago. Setting the session timezone here keeps demo slots
+-- stable when they are later read back to callers in clinic time.
 -- ============================================================
+
+SET TIME ZONE 'America/Chicago';
 
 -- ============================================================
 -- 1. Specialties
@@ -259,7 +264,8 @@ INSERT INTO public.patients (id, uin, full_name, phone, email, allergies) VALUES
   ('c0000000-0000-0000-0000-000000000002', '234567890', 'Bob Martinez',   '2175551002', 'bob.martinez@university.edu',  null),
   ('c0000000-0000-0000-0000-000000000003', '345678901', 'Carol Johnson',  '2175551003', 'carol.j@university.edu',       'Shellfish'),
   ('c0000000-0000-0000-0000-000000000004', '456789012', 'David Lee',      '2175551004', 'david.lee@university.edu',     null),
-  ('c0000000-0000-0000-0000-000000000005', '567890123', 'Emma Thompson',  '2175551005', 'emma.t@university.edu',        'Latex, Sulfa')
+  ('c0000000-0000-0000-0000-000000000005', '567890123', 'Emma Thompson',  '2175551005', 'emma.t@university.edu',        'Latex, Sulfa'),
+  ('c0000000-0000-0000-0000-000000000006', '678901235', 'Nina Carter',    '2175551006', 'nina.carter@university.edu',  null)
 ON CONFLICT (id) DO NOTHING;
 
 
@@ -307,9 +313,30 @@ INSERT INTO public.appointments (id, patient_id, doctor_id, specialty_id, start_
    'c0000000-0000-0000-0000-000000000004',
    'b0000000-0000-0000-0000-000000000001',
    'a0000000-0000-0000-0000-000000000001',
-   (now() - interval '5 days' + interval '9 hours')::timestamptz,
-   (now() - interval '5 days' + interval '10 hours')::timestamptz,
+   (date_trunc('day', now() - interval '5 days') + interval '9 hours')::timestamptz,
+   (date_trunc('day', now() - interval '5 days') + interval '10 hours')::timestamptz,
    'Annual checkup', 'general checkup', 1, 'ROUTINE', 'COMPLETED')
+ON CONFLICT (id) DO NOTHING;
+
+-- Nina has two future appointments to test multi-appointment disambiguation
+INSERT INTO public.appointments (id, patient_id, doctor_id, specialty_id, start_at, end_at, reason, symptoms, severity_rating, urgency, status) VALUES
+  ('d0000000-0000-0000-0000-000000000005',
+   'c0000000-0000-0000-0000-000000000006',
+   'b0000000-0000-0000-0000-000000000007',
+   'a0000000-0000-0000-0000-000000000009',
+   (date_trunc('week', now()) + interval '8 days' + interval '9 hours 30 minutes')::timestamptz,
+   (date_trunc('week', now()) + interval '8 days' + interval '10 hours')::timestamptz,
+   'Ear pain follow-up', 'ear pain', 4, 'ROUTINE', 'CONFIRMED')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.appointments (id, patient_id, doctor_id, specialty_id, start_at, end_at, reason, symptoms, severity_rating, urgency, status) VALUES
+  ('d0000000-0000-0000-0000-000000000006',
+   'c0000000-0000-0000-0000-000000000006',
+   'b0000000-0000-0000-0000-000000000007',
+   'a0000000-0000-0000-0000-000000000008',
+   (date_trunc('week', now()) + interval '10 days' + interval '14 hours')::timestamptz,
+   (date_trunc('week', now()) + interval '10 days' + interval '14 hours 30 minutes')::timestamptz,
+   'Blurry vision follow-up', 'blurry vision', 3, 'ROUTINE', 'CONFIRMED')
 ON CONFLICT (id) DO NOTHING;
 
 
@@ -319,8 +346,8 @@ ON CONFLICT (id) DO NOTHING;
 -- Specialties:  10 (General Practice through Pulmonology)
 -- Symptoms:     ~50 mapped to specialties with weights and follow-up questions
 -- Doctors:       8 with varied availability schedules
--- Patients:      5 with UINs 123456789 through 567890123
--- Appointments:  4 (3 upcoming CONFIRMED, 1 past COMPLETED)
+-- Patients:      6 including QA patient Nina Carter (UIN 678901235)
+-- Appointments:  6 (5 upcoming CONFIRMED, 1 past COMPLETED)
 -- Blocks:        2 (Dr. Chen conference, Dr. Wilson personal)
 --
 -- Test UINs for voice testing:
@@ -329,4 +356,5 @@ ON CONFLICT (id) DO NOTHING;
 --   Carol Johnson:   345678901
 --   David Lee:       456789012
 --   Emma Thompson:   567890123
+--   Nina Carter:     678901235
 -- ============================================================

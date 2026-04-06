@@ -10,10 +10,22 @@ from app.supabase import get_supabase
 router = APIRouter()
 
 
+def _is_valid_uuid(val: str) -> bool:
+    import uuid
+    try:
+        uuid.UUID(val)
+        return True
+    except (ValueError, AttributeError):
+        return False
+
+
 def _handle_cancel(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     appointment_id = args.get("appointment_id")
     if not appointment_id:
         return {"status": "INVALID", "message": "I need to know which appointment to cancel."}
+
+    if not _is_valid_uuid(appointment_id):
+        return {"status": "INVALID", "message": "The appointment ID is not valid. Please try finding the appointment again."}
 
     sb = get_supabase()
 

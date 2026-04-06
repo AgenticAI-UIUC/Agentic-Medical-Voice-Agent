@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, time, timedelta, timezone
+import re
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -21,7 +22,17 @@ from app.supabase import get_supabase
 NEXT_AVAILABLE_ALIASES = {
     "next available day", "next available date", "next available",
     "soonest", "earliest", "earliest available",
+    "as soon as possible", "asap", "soonest available",
 }
+
+
+def _normalize_preference_text(value: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", (value or "").strip().lower())).strip()
+
+
+def is_next_available_request(preferred_day: str) -> bool:
+    normalized = _normalize_preference_text(preferred_day)
+    return any(alias in normalized for alias in NEXT_AVAILABLE_ALIASES)
 
 
 def _fetch_availability(doctor_id: str) -> list[dict[str, Any]]:
@@ -139,6 +150,105 @@ def _generate_theoretical_slots(
     return slots
 
 
+def validate_slot(
+    doctor_id: str,
+    start_dt: datetime,
+    end_dt: datetime,
+) -> str | None:
+    """
+    Validate that a requested slot is bookable. Returns None if valid,
+    or an error message string if invalid.
+    """
+    now = now_utc()
+    horizon = now + timedelta(days=settings.SCHEDULING_HORIZON_DAYS)
+
+    # 1. Slot must be in the future and within the scheduling horizon
+    if start_dt < now:
+        return "That time has already passed. Please choose a future time."
+    if start_dt > horizon:
+        return (
+            f"We can only book up to {settings.SCHEDULING_HORIZON_DAYS} days out. "
+            "Please choose an earlier date."
+        )
+
+    # 2. Doctor must be active
+    sb = get_supabase()
+    doc_res = (
+        sb.table("doctors")
+        .select("id,is_active")
+        .eq("id", doctor_id)
+        .limit(1)
+        .execute()
+    )
+    doc_rows = getattr(doc_res, "data", None) or []
+    if not doc_rows:
+        return "That doctor was not found in our system."
+    if not doc_rows[0].get("is_active"):
+        return "That doctor is not currently accepting appointments."
+
+    # 3. Slot must match an availability template (day, time window, duration)
+    availability = _fetch_availability(doctor_id)
+    if not availability:
+        return "That doctor has no availability configured."
+
+    slot_duration = end_dt - start_dt
+    matched = False
+    for window in availability:
+        tz = ZoneInfo(window.get("timezone") or settings.CLINIC_TIMEZONE)
+        slot_minutes = int(window.get("slot_minutes") or 60)
+
+        if slot_duration != timedelta(minutes=slot_minutes):
+            continue
+
+        # Convert requested slot to the doctor's local timezone for day/time check
+        local_start = start_dt.astimezone(tz)
+        local_end = end_dt.astimezone(tz)
+
+        # Check day of week (schema: Sun=0..Sat=6)
+        schema_dow = (local_start.weekday() + 1) % 7
+        if window["day_of_week"] != schema_dow:
+            continue
+
+        # Parse window start/end times
+        st = window["start_time"]
+        et = window["end_time"]
+        if isinstance(st, str):
+            parts = st.split(":")
+            st = time(int(parts[0]), int(parts[1]))
+        if isinstance(et, str):
+            parts = et.split(":")
+            et = time(int(parts[0]), int(parts[1]))
+
+        if local_start.time() >= st and local_end.time() <= et:
+            matched = True
+            break
+
+    if not matched:
+        return "That time is outside the doctor's available hours."
+
+    # 4. Slot must not be blocked
+    blocks = _fetch_blocks(doctor_id, start_dt, end_dt)
+    if _is_blocked(start_dt, end_dt, blocks):
+        return "The doctor is unavailable during that time."
+
+    # 5. Slot must not overlap any existing booking
+    sb2 = get_supabase()
+    overlap_res = (
+        sb2.table("appointments")
+        .select("id")
+        .eq("doctor_id", doctor_id)
+        .eq("status", "CONFIRMED")
+        .lt("start_at", end_dt.isoformat())
+        .gt("end_at", start_dt.isoformat())
+        .limit(1)
+        .execute()
+    )
+    if getattr(overlap_res, "data", None):
+        return "That slot is already booked."
+
+    return None
+
+
 def find_available_slots(
     doctor_id: str,
     preferred_day: str,
@@ -152,11 +262,10 @@ def find_available_slots(
     now = now_utc()
     horizon = now + timedelta(days=settings.SCHEDULING_HORIZON_DAYS)
 
-    day_raw = (preferred_day or "").strip().lower()
     bucket = parse_time_bucket(preferred_time)
 
     # Determine UTC search window
-    if day_raw in NEXT_AVAILABLE_ALIASES:
+    if is_next_available_request(preferred_day):
         w_start, w_end = now, horizon
     else:
         dr = parse_preferred_day(preferred_day)

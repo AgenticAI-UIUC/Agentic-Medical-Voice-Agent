@@ -197,11 +197,11 @@ def is_in_bucket(start_utc: datetime, bucket: Bucket) -> bool:
 
 
 def format_for_voice(dt_utc: datetime) -> str:
-    """Format like 'Monday at 2 PM'."""
+    """Format like 'Monday, March 31 at 2 PM'."""
     local = dt_utc.astimezone(CLINIC_TZ)
     hour = local.strftime("%I").lstrip("0") or "12"
     ampm = local.strftime("%p")
-    return f"{local.strftime('%A')} at {hour} {ampm}"
+    return f"{local.strftime('%A')}, {local.strftime('%B')} {local.day} at {hour} {ampm}"
 
 
 def format_date_for_voice(dt_utc: datetime) -> str:
