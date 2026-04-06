@@ -7,7 +7,7 @@ from fastapi import APIRouter, Request
 from datetime import datetime
 
 from app.api.vapi_helpers import get_call_id, handle_tool_calls
-from app.services.slot_engine import find_slots_for_specialty
+from app.services.slot_engine import find_slots_for_specialty, validate_slot
 from app.services.time_utils import format_for_voice, now_utc
 from app.supabase import get_supabase
 
@@ -191,11 +191,17 @@ def _handle_reschedule_finalize(args: dict[str, Any], payload: dict[str, Any]) -
         if not _is_valid_uuid(id_val):
             return {"status": "INVALID", "message": f"The {id_field} is not valid. Please try again."}
 
-    # Parse start time for confirmation message
+    # Parse start/end times
     try:
         start_dt = datetime.fromisoformat(start_at.replace("Z", "+00:00"))
+        end_dt = datetime.fromisoformat(end_at.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
         return {"status": "INVALID", "message": "I couldn't understand the appointment time."}
+
+    # Validate that the new slot is real doctor availability
+    slot_error = validate_slot(doctor_id, start_dt, end_dt)
+    if slot_error:
+        return {"status": "INVALID", "message": slot_error}
 
     sb = get_supabase()
 

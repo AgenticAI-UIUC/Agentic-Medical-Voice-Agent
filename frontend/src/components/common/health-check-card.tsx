@@ -15,7 +15,7 @@ export function HealthCheckCard() {
     <div className="rounded-xl border p-4 shadow-sm">
       <h2 className="text-lg font-semibold">Backend Health Check</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Calls <code>/api/v1/utils/health-check</code> on your FastAPI backend
+        Calls <code>/health</code> on your FastAPI backend
       </p>
 
       <div className="mt-4">

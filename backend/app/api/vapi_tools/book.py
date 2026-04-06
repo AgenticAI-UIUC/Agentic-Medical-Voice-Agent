@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 
 from app.api.vapi_helpers import get_call_id, handle_tool_calls
+from app.services.slot_engine import validate_slot
 from app.services.time_utils import format_for_voice
 from app.supabase import get_supabase
 
@@ -33,6 +34,11 @@ def _handle_book(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any
 
     if start_dt >= end_dt:
         return {"status": "INVALID", "message": "The appointment end time must be after the start time."}
+
+    # Validate that the slot is real doctor availability
+    slot_error = validate_slot(doctor_id, start_dt, end_dt)
+    if slot_error:
+        return {"status": "INVALID", "message": slot_error}
 
     sb = get_supabase()
     vapi_call_id = get_call_id(payload)

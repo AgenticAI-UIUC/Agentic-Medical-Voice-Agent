@@ -5,7 +5,7 @@ export type HealthCheckResponse = {
 };
 
 export function getHealthCheck() {
-  return apiFetch<HealthCheckResponse>('/api/v1/utils/health-check', {
+  return apiFetch<HealthCheckResponse>('/health', {
     method: 'GET',
   });
 }

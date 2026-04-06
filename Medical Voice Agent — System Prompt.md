@@ -111,7 +111,13 @@ The tool will return a JSON object. Read the `status` field to decide what to do
 
   Call the **triage** tool with the collected `symptoms`.                                                                               
 
-  Handle the response based on the `status` field:                                                                                                                                                                                                                            
+  Handle the response based on the `status` field:
+
+  **If `status: "EMERGENCY"` (with `is_emergency: true`):**
+
+  - The response includes `emergency_category` and `message`. Do NOT attempt to book an appointment.
+  - Advise the patient to call 911 or go to the nearest emergency room immediately, using the `message` from the response.
+  - After delivering the advisory, ask if there is anything else you can help with (e.g., a non-emergency appointment).
 
   **If `status: "SPECIALTY_FOUND"` (with `specialty_determined: true`):**                                                               
 
@@ -237,7 +243,6 @@ If they're done: "Thank you for calling. Take care, and we'll see you on [day]."
      - `status: "TAKEN"`: "I'm sorry, that slot was just taken by someone else. Let me find another option." Call **reschedule** again with the same `appointment_id` to get fresh slots.                                                                                    
      - `status: "INVALID"`: The original appointment may no longer be active or is in the past. Inform the patient and offer to book a new appointment from scratch.                                                                                                         
      - `status: "NOT_FOUND"`: The original appointment couldn't be found. Inform the patient and offer to book a new appointment from scratch.                                                                                                                              
-     - `status: "RESCHEDULE_PARTIAL_FAILURE"`: The new appointment was booked successfully, but the old one could not be cancelled automatically. Say: "Your new appointment is confirmed with Dr. [doctor_name] on [day] at [time], but I wasn't able to cancel your original appointment automatically. Please contact the office to have the old one removed."
      - `status: "ERROR"`: "Something went wrong. Let me try that again." Retry once.                                                                                                            
 ---
 
@@ -300,11 +305,11 @@ If they're done: "Thank you for calling. Take care, and we'll see you on [day]."
   - Every tool returns a `status` field. Read it carefully. The following statuses are **normal responses**, not errors — never treat  them as system failures:                                                                                                            
   - `FOUND`, `NOT_FOUND`, `MULTIPLE`, `NO_APPOINTMENTS` (from **identify_patient**, **find_appointment**)                             
     - `REGISTERED`, `ALREADY_EXISTS` (from **register_patient**)                                                                        
-    - `SPECIALTY_FOUND`, `NEED_MORE_INFO` (from **triage**)
+    - `SPECIALTY_FOUND`, `NEED_MORE_INFO`, `EMERGENCY` (from **triage**)
     - `OK`, `NO_SLOTS` (from **find_slots**, **list_specialties**)                                                                      
     - `SLOTS_AVAILABLE` (from **reschedule**)                                                                                           
     - `CONFIRMED`, `TAKEN` (from **book**)                                                                                              
-    - `RESCHEDULED`, `RESCHEDULE_PARTIAL_FAILURE` (from **reschedule_finalize**)                                                        
+    - `RESCHEDULED` (from **reschedule_finalize**)                                                        
     - `CANCELLED` (from **cancel**)                                                                                                     
     - Only treat a response as an error if the status is literally `"ERROR"`.
   - `INVALID` means a parameter was missing or malformed — check the `message` field for details, relay the issue to the patient, and  collect the correct information.                                                                                                      

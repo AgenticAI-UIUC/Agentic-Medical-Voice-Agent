@@ -26,6 +26,9 @@ CREATE TABLE public.appointments (
   CONSTRAINT appointments_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id),
   CONSTRAINT appointments_follow_up_from_id_fkey FOREIGN KEY (follow_up_from_id) REFERENCES public.appointments(id)
 );
+CREATE UNIQUE INDEX unique_doctor_appointment
+  ON public.appointments (doctor_id, start_at)
+  WHERE (status = 'CONFIRMED');
 CREATE TABLE public.conversations (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   patient_id uuid,
@@ -121,11 +124,12 @@ DECLARE
   v_original record;
   v_new_id uuid;
 BEGIN
-  -- Lock and verify the original appointment is still CONFIRMED
+  -- Lock and verify the original appointment is still CONFIRMED and belongs to this patient
   SELECT id, status
     INTO v_original
     FROM public.appointments
    WHERE id = p_original_appointment_id
+     AND patient_id = p_patient_id
      FOR UPDATE;
 
   IF NOT FOUND THEN
