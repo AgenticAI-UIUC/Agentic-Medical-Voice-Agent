@@ -19,6 +19,15 @@ def _handle_triage(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
 
     result = triage_symptoms(symptoms, answers)
 
+    if result.is_emergency:
+        return {
+            "status": "EMERGENCY",
+            "specialty_determined": False,
+            "is_emergency": True,
+            "emergency_category": result.emergency_category,
+            "message": result.emergency_message,
+        }
+
     if result.specialty_determined:
         return {
             "status": "SPECIALTY_FOUND",
