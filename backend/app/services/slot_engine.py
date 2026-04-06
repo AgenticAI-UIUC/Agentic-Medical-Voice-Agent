@@ -220,9 +220,19 @@ def validate_slot(
     if _is_blocked(start_dt, end_dt, blocks):
         return "The doctor is unavailable during that time."
 
-    # 5. Slot must not already be booked
-    booked = _fetch_booked(doctor_id, start_dt, start_dt + timedelta(minutes=1))
-    if start_dt in booked:
+    # 5. Slot must not overlap any existing booking
+    sb2 = get_supabase()
+    overlap_res = (
+        sb2.table("appointments")
+        .select("id")
+        .eq("doctor_id", doctor_id)
+        .eq("status", "CONFIRMED")
+        .lt("start_at", end_dt.isoformat())
+        .gt("end_at", start_dt.isoformat())
+        .limit(1)
+        .execute()
+    )
+    if getattr(overlap_res, "data", None):
         return "That slot is already booked."
 
     return None

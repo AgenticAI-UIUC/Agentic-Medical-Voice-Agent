@@ -10,6 +10,7 @@ CREATE TABLE public.appointments (
   follow_up_from_id uuid,
   start_at timestamp with time zone NOT NULL,
   end_at timestamp with time zone NOT NULL,
+  CONSTRAINT chk_appointments_end_after_start CHECK (end_at > start_at),
   reason text,
   symptoms text,
   severity_description text,
@@ -26,8 +27,12 @@ CREATE TABLE public.appointments (
   CONSTRAINT appointments_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id),
   CONSTRAINT appointments_follow_up_from_id_fkey FOREIGN KEY (follow_up_from_id) REFERENCES public.appointments(id)
 );
-CREATE UNIQUE INDEX unique_doctor_appointment
-  ON public.appointments (doctor_id, start_at)
+ALTER TABLE public.appointments
+  ADD CONSTRAINT no_doctor_overlap
+  EXCLUDE USING gist (
+    doctor_id WITH =,
+    tstzrange(start_at, end_at) WITH &&
+  )
   WHERE (status = 'CONFIRMED');
 CREATE TABLE public.conversations (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -45,6 +50,7 @@ CREATE TABLE public.doctor_availability (
   day_of_week integer NOT NULL CHECK (day_of_week >= 0 AND day_of_week <= 6),
   start_time time without time zone NOT NULL,
   end_time time without time zone NOT NULL,
+  CONSTRAINT chk_availability_end_after_start CHECK (end_time > start_time),
   slot_minutes integer NOT NULL DEFAULT 60 CHECK (slot_minutes > 0),
   timezone text NOT NULL DEFAULT 'America/Chicago'::text,
   CONSTRAINT doctor_availability_pkey PRIMARY KEY (id),
@@ -55,6 +61,7 @@ CREATE TABLE public.doctor_blocks (
   doctor_id uuid NOT NULL,
   start_at timestamp with time zone NOT NULL,
   end_at timestamp with time zone NOT NULL,
+  CONSTRAINT chk_doctor_blocks_end_after_start CHECK (end_at > start_at),
   reason text,
   CONSTRAINT doctor_blocks_pkey PRIMARY KEY (id),
   CONSTRAINT doctor_blocks_doctor_id_fkey FOREIGN KEY (doctor_id) REFERENCES public.doctors(id)

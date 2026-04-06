@@ -118,22 +118,27 @@ def _is_valid_uuid(val: str) -> bool:
 def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     """Cancel old appointment and find new slots for same specialty."""
     appointment_id = args.get("appointment_id")
+    patient_id = args.get("patient_id")
     preferred_day = args.get("preferred_day", "")
     preferred_time = args.get("preferred_time", "")
 
     if not appointment_id:
         return {"status": "INVALID", "message": "I need to know which appointment to reschedule."}
 
+    if not patient_id:
+        return {"status": "INVALID", "message": "I need your patient information first."}
+
     if not _is_valid_uuid(appointment_id):
         return {"status": "INVALID", "message": "The appointment ID is not valid. Please try finding the appointment again."}
 
     sb = get_supabase()
 
-    # Fetch the original appointment
+    # Fetch the original appointment — verify patient ownership
     res = (
         sb.table("appointments")
         .select("id,specialty_id,doctor_id,status")
         .eq("id", appointment_id)
+        .eq("patient_id", patient_id)
         .limit(1)
         .execute()
     )
@@ -245,7 +250,7 @@ def _handle_reschedule_finalize(args: dict[str, Any], payload: dict[str, Any]) -
     try:
         rpc_res = sb.rpc("reschedule_appointment", rpc_params).execute()
     except Exception as e:
-        if "unique_doctor_appointment" in str(e):
+        if "unique_doctor_appointment" in str(e) or "no_doctor_overlap" in str(e):
             return {
                 "status": "TAKEN",
                 "message": "Sorry, that time was just booked. Would you like to pick another time?",

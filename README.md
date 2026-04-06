@@ -697,6 +697,18 @@ pnpm typecheck
 pnpm lint
 ```
 
+## Git Hooks
+
+This repo includes a native Git pre-commit hook in `.githooks/pre-commit` that blocks commits when the backend test suite fails.
+
+Set it up once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The hook runs `./scripts/run_backend_tests.sh`, which prefers `backend/.venv` and falls back to `uv run --directory backend pytest tests`.
+
 ## License
 
 MIT

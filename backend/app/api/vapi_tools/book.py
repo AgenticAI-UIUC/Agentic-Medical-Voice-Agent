@@ -68,7 +68,7 @@ def _handle_book(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any
         res = sb.table("appointments").insert(row).execute()
     except Exception as e:
         err_msg = str(e)
-        if "unique_doctor_appointment" in err_msg:
+        if "unique_doctor_appointment" in err_msg or "no_doctor_overlap" in err_msg:
             return {
                 "status": "TAKEN",
                 "message": "Sorry, that time was just booked. Would you like to pick another time?",
