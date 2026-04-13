@@ -1,0 +1,84 @@
+id: SMK-05
+title: "As soon as possible" plus morning falls back to earliest available slots
+priority: P1
+category: slot-recovery
+needs_fresh_uin: false
+mutates_database: false
+
+goal: >
+  Verify the assistant still offers useful slots when the patient asks for the
+  soonest morning appointment but only later-day openings exist.
+
+seed_dependencies:
+  patients:
+    - Carol Johnson / 345678901
+  specialties:
+    - Neurology
+  doctors:
+    - Dr. Priya Patel
+
+stop_condition: End the run after the assistant presents fallback slot options.
+
+user_script:
+  - speaker: user
+    text: I'd like to make an appointment.
+  - speaker: user
+    text: I've been there before.
+  - speaker: user
+    text: My UIN is three four five six seven eight nine zero one.
+  - speaker: user
+    text: Yes.
+  - speaker: user
+    text: I've been getting migraines and headaches.
+  - speaker: user
+    text: Seven.
+  - speaker: user
+    text: They keep coming back and light makes them worse.
+  - speaker: user
+    text: No specialist preference.
+  - speaker: user
+    text: As soon as possible.
+  - speaker: user
+    text: Morning.
+
+expected_tool_path:
+  - tool: identify_patient
+    expect_status:
+      - FOUND
+    args_match:
+      uin: "345678901"
+  - tool: triage
+    expect_status:
+      - SPECIALTY_FOUND
+    args_should_include:
+      symptoms:
+        - migraines
+        - headaches
+  - tool: find_slots
+    expect_status:
+      - OK
+    args_match:
+      preferred_day: as soon as possible
+      preferred_time: morning
+
+must_do:
+  - Explain that no morning openings are available as soon as possible.
+  - Still present the earliest available appointments instead of stopping.
+  - Present those fallback options with full spoken dates.
+  - Ask the patient which fallback option works best.
+
+must_not_do:
+  - Stop at a dead-end "no slots" response.
+  - Ask the patient to restate the same preference before offering fallback slots.
+  - Present more than three fallback slot options at once.
+
+failure_signals:
+  - The run ends after the assistant says there are no morning openings.
+  - The assistant does not offer any earliest-available fallback slots.
+  - The assistant ignores the tool message and asks unrelated follow-up questions.
+
+follow_on_variant:
+  title: Taken-slot recovery
+  note: >
+    This is the next slot-recovery case to add as a deterministic regression
+    once we have a way to force book -> TAKEN reliably in the eval environment.

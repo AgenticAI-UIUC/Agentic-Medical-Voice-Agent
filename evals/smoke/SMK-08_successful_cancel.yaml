@@ -1,0 +1,71 @@
+id: SMK-08
+title: Successful cancellation for an existing appointment
+priority: P1
+category: cancel
+needs_fresh_uin: false
+mutates_database: true
+
+goal: >
+  Verify that the assistant identifies the patient, finds the correct existing
+  appointment, asks for confirmation, and cancels it only after the patient
+  confirms.
+
+seed_dependencies:
+  patients:
+    - Alice Wang / 123456789
+  doctors:
+    - Dr. Maria Torres
+  appointments:
+    - d0000000-0000-0000-0000-000000000001 / Recurring chest tightness
+
+user_script:
+  - speaker: user
+    text: I need to cancel my appointment.
+  - speaker: user
+    text: My UIN is one two three four five six seven eight nine.
+  - speaker: user
+    text: Yes.
+  - speaker: user
+    text: It's the cardiology appointment with Dr. Maria Torres next Tuesday morning.
+  - speaker: user
+    text: Yes.
+
+expected_tool_path:
+  - tool: identify_patient
+    expect_status:
+      - FOUND
+    args_match:
+      uin: "123456789"
+  - tool: find_appointment
+    expect_status:
+      - FOUND
+    args_match:
+      patient_id: c0000000-0000-0000-0000-000000000001
+    args_should_include:
+      doctor_name:
+        - Maria Torres
+      reason:
+        - cardiology
+        - chest
+  - tool: cancel
+    expect_status:
+      - CANCELLED
+    args_match:
+      appointment_id: d0000000-0000-0000-0000-000000000001
+
+must_do:
+  - Ask for the UIN immediately after the caller says they want to cancel.
+  - Confirm the identified patient before continuing.
+  - Confirm the matched appointment before cancelling it.
+  - Cancel only after the patient says yes.
+  - Offer rebooking or other help after a successful cancellation.
+
+must_not_do:
+  - Ask whether the caller is new or returning before identification.
+  - Cancel the appointment before explicit patient confirmation.
+  - Suggest registration in this successful returning-patient flow.
+
+failure_signals:
+  - identify_patient is skipped.
+  - cancel is called before the user confirms the cancellation.
+  - The assistant ends the call without confirming the cancellation result.

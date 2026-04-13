@@ -1,0 +1,86 @@
+id: SMK-04
+title: Returning patient identification then booking
+priority: P1
+category: booking
+needs_fresh_uin: false
+mutates_database: true
+
+goal: >
+  Verify that a returning patient is identified first, skips registration, and
+  completes a routine new-appointment booking flow.
+
+seed_dependencies:
+  patients:
+    - Bob Martinez / 234567890
+  specialties:
+    - Gastroenterology
+  doctors:
+    - Dr. Robert Kim
+
+user_script:
+  - speaker: user
+    text: I'd like to make an appointment.
+  - speaker: user
+    text: I've been there before.
+  - speaker: user
+    text: My UIN is two three four five six seven eight nine zero.
+  - speaker: user
+    text: Yes.
+  - speaker: user
+    text: I've been having stomach pain and nausea.
+  - speaker: user
+    text: Six.
+  - speaker: user
+    text: It's been on and off for a few days.
+  - speaker: user
+    text: No specialist preference.
+  - speaker: user
+    text: Next week.
+  - speaker: user
+    text: Afternoon.
+  - speaker: user
+    text: The first option works.
+
+expected_tool_path:
+  - tool: identify_patient
+    expect_status:
+      - FOUND
+    args_match:
+      uin: "234567890"
+  - tool: triage
+    expect_status:
+      - SPECIALTY_FOUND
+    args_should_include:
+      symptoms:
+        - stomach pain
+        - nausea
+  - tool: find_slots
+    expect_status:
+      - OK
+    args_match:
+      preferred_day: next week
+      preferred_time: afternoon
+  - tool: book
+    expect_status:
+      - CONFIRMED
+    args_required:
+      - patient_id
+      - doctor_id
+      - start_at
+      - end_at
+
+must_do:
+  - Ask for the UIN once the caller says they have been there before.
+  - Confirm the identified patient before continuing.
+  - Continue into symptom collection and booking without suggesting re-registration.
+  - Confirm the final appointment in spoken date-and-time format.
+
+must_not_do:
+  - Call register_patient in this flow.
+  - Ask whether the returning patient is a new patient after identification.
+  - Skip patient identification and go straight to triage or slots.
+
+failure_signals:
+  - identify_patient is never called.
+  - register_patient appears anywhere in the run.
+  - The assistant books before confirming identity.

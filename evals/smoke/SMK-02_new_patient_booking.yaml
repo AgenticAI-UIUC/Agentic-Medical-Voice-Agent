@@ -1,0 +1,102 @@
+id: SMK-02
+title: New patient registration then booking
+priority: P1
+category: booking
+needs_fresh_uin: true
+mutates_database: true
+
+goal: >
+  Verify the full new-patient path: registration, symptom collection, triage,
+  slot search, and booking without losing the original intent.
+
+seed_dependencies:
+  specialties:
+    - Dermatology
+  doctors:
+    - Dr. Emily Johnson
+
+test_data:
+  uin: "678901234"
+  full_name: Maya Chen
+  phone: "0423349435"
+
+user_script:
+  - speaker: user
+    text: I'd like to make an appointment.
+  - speaker: user
+    text: This is my first time.
+  - speaker: user
+    text: My UIN is six seven eight nine zero one two three four.
+  - speaker: user
+    text: Yes.
+  - speaker: user
+    text: My name is Maya Chen.
+  - speaker: user
+    text: My phone number is zero four two three three four nine four three five.
+  - speaker: user
+    text: Yes.
+  - speaker: user
+    text: I have a rash on both arms and it's really itchy.
+  - speaker: user
+    text: Four.
+  - speaker: user
+    text: It feels irritated and keeps spreading.
+  - speaker: user
+    text: I don't have a specialist in mind.
+  - speaker: user
+    text: That sounds right.
+  - speaker: user
+    text: Next week.
+  - speaker: user
+    text: Morning.
+  - speaker: user
+    text: The first one works for me.
+
+expected_tool_path:
+  - tool: register_patient
+    expect_status:
+      - REGISTERED
+    args_match:
+      uin: "678901234"
+      full_name: Maya Chen
+      phone_digits: "0423349435"
+  - tool: triage
+    expect_status:
+      - SPECIALTY_FOUND
+    args_should_include:
+      symptoms:
+        - rash
+        - itchy
+  - tool: find_slots
+    expect_status:
+      - OK
+    args_match:
+      preferred_day: next week
+      preferred_time: morning
+  - tool: book
+    expect_status:
+      - CONFIRMED
+    args_required:
+      - patient_id
+      - doctor_id
+      - start_at
+      - end_at
+
+must_do:
+  - Confirm the UIN before calling register_patient.
+  - Confirm the phone number before calling register_patient.
+  - Move directly from registration into symptom collection.
+  - Present no more than three slot options.
+  - Confirm the booked doctor and spoken appointment time clearly.
+
+must_not_do:
+  - Call register_patient before collecting full_name and confirmed phone.
+  - Reset the conversation with "What can I help you with today?" after registration.
+  - Ask whether this newly registered patient is calling for a follow-up.
+  - Claim registration or booking succeeded before the tool confirms it.
+
+failure_signals:
+  - register_patient fires after only the UIN is collected.
+  - The assistant loses the booking intent after registration.
+  - The assistant skips triage and books directly.
+  - The assistant reads more than three slots at once.

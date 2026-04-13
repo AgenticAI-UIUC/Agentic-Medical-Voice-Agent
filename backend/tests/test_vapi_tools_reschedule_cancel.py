@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 
 from app.api.vapi_tools import cancel, reschedule
@@ -10,6 +12,7 @@ from tests.support import MockQuery, MockSupabase
 VALID_APPOINTMENT_ID = "11111111-1111-1111-1111-111111111111"
 VALID_PATIENT_ID = "22222222-2222-2222-2222-222222222222"
 VALID_DOCTOR_ID = "33333333-3333-3333-3333-333333333333"
+FIXED_NOW = datetime(2026, 4, 1, tzinfo=timezone.utc)
 
 
 def test_handle_find_appointment_requires_patient_id() -> None:
@@ -34,6 +37,7 @@ def test_handle_find_appointment_returns_found_match(monkeypatch: pytest.MonkeyP
     ]
     sb = MockSupabase(tables={"appointments": [MockQuery(data=appointments)]})
     monkeypatch.setattr(reschedule, "get_supabase", lambda: sb)
+    monkeypatch.setattr(reschedule, "now_utc", lambda: FIXED_NOW)
     monkeypatch.setattr(reschedule, "_format_start", lambda start_at: "Friday, April 10 at 11 AM")
 
     result = reschedule._handle_find_appointment(
@@ -108,6 +112,7 @@ def test_handle_find_appointment_returns_multiple_choices(monkeypatch: pytest.Mo
     ]
     sb = MockSupabase(tables={"appointments": [MockQuery(data=appointments)]})
     monkeypatch.setattr(reschedule, "get_supabase", lambda: sb)
+    monkeypatch.setattr(reschedule, "now_utc", lambda: FIXED_NOW)
     monkeypatch.setattr(reschedule, "_format_start", lambda start_at: f"slot-for-{start_at[:10]}")
 
     result = reschedule._handle_find_appointment({"patient_id": VALID_PATIENT_ID}, {})

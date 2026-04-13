@@ -1,0 +1,57 @@
+id: SMK-03
+title: Registration success resumes the original booking intent
+priority: P1
+category: conversation-regression
+needs_fresh_uin: true
+mutates_database: true
+
+goal: >
+  Catch the specific regression where the assistant successfully registers a new
+  patient but then resets the conversation instead of continuing booking.
+
+test_data:
+  uin: "679001234"
+  full_name: Jordan Miles
+  phone: "2175552099"
+
+stop_condition: End the run after the assistant asks its first post-registration booking question.
+
+user_script:
+  - speaker: user
+    text: I'd like to make an appointment.
+  - speaker: user
+    text: This is my first time.
+  - speaker: user
+    text: My UIN is six seven nine zero zero one two three four.
+  - speaker: user
+    text: Yes.
+  - speaker: user
+    text: Jordan Miles.
+  - speaker: user
+    text: Two one seven five five five two zero nine nine.
+  - speaker: user
+    text: Yes.
+
+expected_tool_path:
+  - tool: register_patient
+    expect_status:
+      - REGISTERED
+    args_match:
+      uin: "679001234"
+      full_name: Jordan Miles
+      phone_digits: "2175552099"
+
+must_do:
+  - Acknowledge the successful registration briefly.
+  - Ask the next booking question immediately after registration.
+  - Use symptom collection as the next step.
+
+must_not_do:
+  - Ask "What can I help you with today?" after REGISTERED.
+  - Re-ask whether the caller is new or returning.
+  - Ask whether this newly registered patient is calling for a follow-up.
+
+failure_signals:
+  - The assistant treats registration like a brand-new conversation.
+  - The assistant ends the flow after saying the patient is registered.
+  - The next question is unrelated to symptom collection or booking.

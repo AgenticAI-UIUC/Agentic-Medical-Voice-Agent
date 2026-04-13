@@ -4,6 +4,10 @@ An AI-powered voice agent for medical appointment scheduling. Patients interact 
 
 Built with **Vapi.ai** for voice orchestration, **FastAPI** for backend logic, **Next.js** for the admin dashboard, and **Supabase** (PostgreSQL) for data persistence.
 
+## Live Demo
+
+[Live Demo Presentation](https://docs.google.com/presentation/d/1cgQ5Le6WUlc7gRtGxONqgf50JMEoKzHeZP6AZMr_YFc/edit?slide=id.g3de75b2e283_0_1#slide=id.g3de75b2e283_0_1)
+
 ## How It Works
 
 ```
