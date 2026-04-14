@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import httpx
+
 from app.api import vapi_helpers
 
 
@@ -56,3 +58,22 @@ def test_handle_tool_calls_wraps_results_and_errors() -> None:
     assert json.loads(response["results"][0]["result"]) == {"status": "OK", "value": 1}
     assert response["results"][1]["toolCallId"] == "bad"
     assert json.loads(response["results"][1]["result"]) == {"status": "ERROR", "message": "boom"}
+
+
+def test_handle_tool_calls_maps_timeouts_to_friendly_error() -> None:
+    payload = {
+        "toolCalls": [
+            {"id": "slow", "function": {"arguments": {"value": 1}}},
+        ]
+    }
+
+    def handler(args: dict[str, int], payload: dict[str, object]) -> dict[str, object]:
+        raise httpx.ReadTimeout("timed out")
+
+    response = vapi_helpers.handle_tool_calls(payload, handler)
+
+    assert response["results"][0]["toolCallId"] == "slow"
+    assert json.loads(response["results"][0]["result"]) == {
+        "status": "ERROR",
+        "message": "I'm having trouble reaching the clinic records system right now. Please try again in a moment.",
+    }

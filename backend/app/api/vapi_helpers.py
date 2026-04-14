@@ -4,6 +4,17 @@ import json
 import re
 from typing import Any
 
+import httpx
+
+
+def _tool_error_result(exc: Exception) -> dict[str, str]:
+    if isinstance(exc, httpx.TimeoutException):
+        return {
+            "status": "ERROR",
+            "message": "I'm having trouble reaching the clinic records system right now. Please try again in a moment.",
+        }
+    return {"status": "ERROR", "message": str(exc)}
+
 
 def extract_tool_calls(payload: dict[str, Any]) -> list[dict[str, Any]]:
     msg = payload.get("message", {})
@@ -63,6 +74,6 @@ def handle_tool_calls(payload: dict[str, Any], handler) -> dict[str, Any]:
             out = handler(args, payload)
             results.append(vapi_tool_response(tc_id, out))
         except Exception as e:
-            results.append(vapi_tool_response(tc_id, {"status": "ERROR", "message": str(e)}))
+            results.append(vapi_tool_response(tc_id, _tool_error_result(e)))
 
     return {"results": results}

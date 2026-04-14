@@ -18,6 +18,7 @@ The goal is to keep the first eval suite:
 - `smoke/SMK-06_successful_existing_patient_booking.yaml`
 - `smoke/SMK-07_successful_reschedule.yaml`
 - `smoke/SMK-08_successful_cancel.yaml`
+- `smoke/SMK-09_duplicate_uin_correction.yaml`
 
 These are not tied to a specific vendor export format yet. They are written as stable case specs so we can:
 
@@ -36,7 +37,7 @@ These are not tied to a specific vendor export format yet. They are written as s
 
 - `SMK-01` is non-mutating.
 - `SMK-05` stops after slot presentation and should be non-mutating.
-- `SMK-02`, `SMK-03`, `SMK-04`, `SMK-06`, `SMK-07`, and `SMK-08` mutate appointment or patient data. Run them in a disposable environment, or reset data between runs.
+- `SMK-02`, `SMK-03`, `SMK-04`, `SMK-06`, `SMK-07`, `SMK-08`, and `SMK-09` mutate appointment or patient data. Run them in a disposable environment, or reset data between runs.
 - Cases marked with `needs_fresh_uin: true` should use a UIN that does not already exist in `patients`.
 
 ## How To Score A Case
@@ -59,6 +60,7 @@ Run these after prompt edits, tool schema changes, or backend changes that touch
 3. `SMK-03` continue booking after registration
 4. `SMK-04` returning-patient booking
 5. `SMK-05` "as soon as possible" fallback when no morning slots exist
+6. `SMK-09` duplicate-UIN correction while preserving collected name and phone
 
 ## Demo-Friendly Success Suite
 
@@ -72,8 +74,8 @@ If you want a live demo that shows clear successful workflows without registrati
 
 Once this starter pack feels stable, the next high-value additions are:
 
-- duplicate-UIN correction while preserving collected name and phone
 - follow-up booking with `find_appointment(include_past=true)`
+- returning-patient double-`NOT_FOUND` before offering registration
 - reschedule no-change path when the patient keeps the original appointment
 - cancellation decline path where the patient decides not to cancel
 - taken-slot recovery after `book` returns `TAKEN`

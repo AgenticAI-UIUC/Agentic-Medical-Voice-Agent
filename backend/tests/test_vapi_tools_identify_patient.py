@@ -15,6 +15,7 @@ def test_lookup_patient_requires_uin() -> None:
     result = identify_patient._lookup_patient({}, {})
 
     assert result["status"] == "INVALID"
+    assert result["reason"] == "MISSING_UIN"
     assert "didn't catch your UIN" in result["message"]
 
 
@@ -22,7 +23,11 @@ def test_lookup_patient_rejects_non_9_digit_uin() -> None:
     result = identify_patient._lookup_patient({"uin": "one two three"}, {})
 
     assert result["status"] == "INVALID"
+    assert result["reason"] == "WRONG_LENGTH"
+    assert result["expected_digits"] == 9
+    assert result["received_digits"] == 3
     assert "9-digit university UIN" in result["message"]
+    assert "I heard 3 digits" in result["message"]
 
 
 def test_lookup_patient_returns_not_found_with_normalized_uin(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -59,7 +64,7 @@ def test_lookup_patient_returns_patient_record(monkeypatch: pytest.MonkeyPatch) 
 @pytest.mark.parametrize(
     ("args", "message_fragment"),
     [
-        ({"uin": "123"}, "9-digit university UIN"),
+        ({"uin": "123"}, "I heard 3 digits"),
         ({"uin": "123456789"}, "full name"),
         ({"uin": "123456789", "full_name": "Sam Student"}, "valid phone number"),
     ],
@@ -69,6 +74,16 @@ def test_register_patient_validates_required_fields(args: dict[str, str], messag
 
     assert result["status"] == "INVALID"
     assert message_fragment in result["message"]
+
+
+def test_register_patient_invalid_uin_includes_digit_counts() -> None:
+    result = identify_patient._register_patient({"uin": "12345678"}, {})
+
+    assert result["status"] == "INVALID"
+    assert result["reason"] == "WRONG_LENGTH"
+    assert result["expected_digits"] == 9
+    assert result["received_digits"] == 8
+    assert result["message"] == "I heard 8 digits, but I need your 9-digit university UIN to register you."
 
 
 def test_register_patient_returns_existing_patient_for_duplicate_uin(monkeypatch: pytest.MonkeyPatch) -> None:

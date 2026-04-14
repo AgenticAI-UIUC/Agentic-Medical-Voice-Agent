@@ -2322,6 +2322,349 @@ FAIL if ANY are true:
 Output exactly one word: pass or fail.
 ```
 
+## SMK-09 Duplicate-UIN Correction
+
+Source: [SMK-09_duplicate_uin_correction.yaml](/Users/henrylong/Desktop/medical_voice_agent/Agentic-Medical-Voice-Agent/evals/smoke/SMK-09_duplicate_uin_correction.yaml:1)
+
+### Exact Vapi Workflow
+
+Build this one as a focused regression eval. The goal is to prove that when a new-patient registration attempt returns `ALREADY_EXISTS` for the wrong person, the assistant stays in the registration flow, asks only for the corrected UIN, preserves the already collected name and phone number, and retries `register_patient` instead of switching into returning-patient lookup.
+
+Use this exact turn order:
+
+1. `User`
+   `I'd like to make an appointment.`
+
+2. `Assistant`
+   `Mock`: off
+   `Evaluation`: on
+   `Approach`: `LLM-as-a-judge`
+   Check that the assistant asks whether this is a first-time or returning patient.
+
+3. `User`
+   `This is my first time.`
+
+4. `Assistant`
+   `Mock`: off
+   `Evaluation`: on
+   `Approach`: `LLM-as-a-judge`
+   Check that the assistant starts registration and asks for the UIN while preserving booking intent.
+
+5. `User`
+   `My UIN is one two three four five six seven eight nine.`
+
+6. `Assistant`
+   `Mock`: off
+   `Evaluation`: on
+   `Approach`: `LLM-as-a-judge`
+   Check that the assistant reads the UIN back for confirmation and does not call `register_patient` yet.
+
+7. `User`
+   `Yes.`
+
+8. `Assistant`
+   `Mock`: off
+   `Evaluation`: on
+   `Approach`: `LLM-as-a-judge`
+   Check that the assistant asks for the caller's full name and does not call `register_patient` yet.
+
+9. `User`
+   `My name is Taylor Reed.`
+
+10. `Assistant`
+    `Mock`: off
+    `Evaluation`: on
+    `Approach`: `LLM-as-a-judge`
+    Check that the assistant asks for the phone number and does not call `register_patient` yet.
+
+11. `User`
+    `My phone number is one two three four five six seven eight.`
+
+12. `Assistant`
+    `Mock`: off
+    `Evaluation`: on
+    `Approach`: `LLM-as-a-judge`
+    Check that the assistant reads the phone number back for confirmation and does not call `register_patient` yet.
+
+13. `User`
+    `Yes.`
+
+14. `Assistant`
+    `Mock`: off
+    `Evaluation`: on
+    Use tool validation for `register_patient` with:
+    - `uin = 123456789`
+    - `full_name = Taylor Reed`
+    - `phone = 12345678`
+
+15. `Tool Response`
+    Paste the mocked `ALREADY_EXISTS` response below.
+
+16. `Assistant`
+    `Mock`: off
+    `Evaluation`: on
+    `Approach`: `LLM-as-a-judge`
+    Check that the assistant confirms the existing identity from the tool response and asks whether the caller is that person.
+
+17. `User`
+    `No, that's not me.`
+
+18. `Assistant`
+    `Mock`: off
+    `Evaluation`: on
+    `Approach`: `LLM-as-a-judge`
+    This is the key regression checkpoint.
+    Check that the assistant stays in the new-patient registration flow, asks only for the corrected UIN, and does not ask again for name or phone.
+
+19. `User`
+    `My UIN is one two three four five six seven seven zero.`
+
+20. `Assistant`
+    `Mock`: off
+    `Evaluation`: on
+    `Approach`: `LLM-as-a-judge`
+    Check that the assistant reads the corrected UIN back for confirmation and does not call `identify_patient`.
+
+21. `User`
+    `Yes.`
+
+22. `Assistant`
+    `Mock`: off
+    `Evaluation`: on
+    Use tool validation for `register_patient` with:
+    - `uin = 123456770`
+    - `full_name = Taylor Reed`
+    - `phone = 12345678`
+
+23. `Tool Response`
+    Paste the mocked `REGISTERED` response below.
+
+24. `Assistant`
+    `Mock`: off
+    `Evaluation`: on
+    `Approach`: `LLM-as-a-judge`
+    This is the final checkpoint. Stop the run after this turn.
+    The assistant should acknowledge the successful corrected-UIN registration briefly and immediately continue into symptom collection. It must not ask whether the caller wants to register, and it must not shift into a returning-patient lookup flow.
+
+### User Messages
+
+1. `I'd like to make an appointment.`
+2. `This is my first time.`
+3. `My UIN is one two three four five six seven eight nine.`
+4. `Yes.`
+5. `My name is Taylor Reed.`
+6. `My phone number is one two three four five six seven eight.`
+7. `Yes.`
+8. `No, that's not me.`
+9. `My UIN is one two three four five six seven seven zero.`
+10. `Yes.`
+
+### Mock Tool Responses
+
+`register_patient` first response
+
+```json
+{"status":"ALREADY_EXISTS","patient_id":"c0000000-0000-0000-0000-000000000001","uin":"123456789","full_name":"Alice Wang","message":"It looks like you're already registered as Alice Wang."}
+```
+
+`register_patient` second response
+
+```json
+{"status":"REGISTERED","patient_id":"c-test-taylor","uin":"123456770","full_name":"Taylor Reed","message":"Registration complete for Taylor Reed."}
+```
+
+### Assistant Checkpoints
+
+Add evaluated `Assistant` turns at the checkpoints shown in the workflow above. The most important ones are:
+
+- immediately after the first `ALREADY_EXISTS` tool response
+- immediately after the caller denies that identity
+- immediately after the corrected-UIN confirmation and second `register_patient` success
+
+Stop the run after the assistant asks its first symptom-collection question following the corrected registration.
+
+### Judge Prompts By Checkpoint
+
+Use these prompts for the evaluated `Assistant` turns in the workflow above.
+
+After Turn 2:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant asks whether the caller has been to the clinic before or if this is their first time.
+- The assistant does not skip ahead to UIN collection before asking that routing question.
+
+FAIL if ANY are true:
+- The assistant skips the first-time vs returning question.
+- The assistant jumps to an unrelated workflow.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 4:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant starts the new-patient registration flow.
+- The assistant asks for the caller's 9-digit UIN.
+- The assistant preserves the booking intent.
+
+FAIL if ANY are true:
+- The assistant asks for the wrong next field.
+- The assistant resets the conversation instead of continuing the booking flow.
+- The assistant skips registration and goes somewhere else.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 6:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant reads back the UIN for confirmation.
+- The assistant asks whether the readback is correct.
+- The assistant does not call register_patient yet.
+
+FAIL if ANY are true:
+- The assistant skips UIN confirmation.
+- The assistant calls register_patient before collecting the remaining registration fields.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 8:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant asks for the caller's full name after UIN confirmation.
+- The assistant does not call register_patient yet.
+
+FAIL if ANY are true:
+- The assistant calls register_patient before collecting full_name.
+- The assistant skips full-name collection.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 10:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant asks for a phone number after collecting the full name.
+- The assistant does not call register_patient yet.
+
+FAIL if ANY are true:
+- The assistant skips phone-number collection.
+- The assistant calls register_patient before collecting the phone number.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 12:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant reads back the phone number for confirmation.
+- The assistant asks whether the readback is correct.
+- The assistant does not call register_patient before the patient confirms the phone number.
+
+FAIL if ANY are true:
+- The assistant skips phone confirmation.
+- The assistant calls register_patient before phone confirmation.
+- The assistant moves on without confirming the phone number.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 16:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant uses the `ALREADY_EXISTS` tool response to confirm the existing identity by name.
+- The assistant asks whether the caller is Alice Wang or uses equivalent wording grounded in the tool response.
+- The assistant preserves the booking context while asking this clarification question.
+
+FAIL if ANY are true:
+- The assistant skips the identity check after the duplicate-UIN response.
+- The assistant acts as though registration already succeeded.
+- The assistant switches into a different workflow before the caller answers.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 18:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- After the caller denies the duplicate-UIN identity, the assistant stays in the new-patient registration flow.
+- The assistant asks for the corrected UIN.
+- The assistant does not ask again for the caller's full name.
+- The assistant does not ask again for the caller's phone number.
+- The assistant does not ask whether the caller wants to register.
+
+FAIL if ANY are true:
+- The assistant switches into returning-patient lookup language.
+- The assistant asks for name or phone again before retrying register_patient.
+- The assistant asks whether the caller would like to register.
+- The assistant suggests that it still needs to find an existing record before continuing.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 20:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant reads back the corrected UIN for confirmation.
+- The assistant asks whether the corrected-UIN readback is right.
+- The assistant does not call identify_patient.
+
+FAIL if ANY are true:
+- The assistant skips corrected-UIN confirmation.
+- The assistant calls identify_patient after the caller denied the wrong identity.
+- The assistant treats the corrected UIN as a returning-patient lookup.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 24:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant briefly acknowledges the successful corrected-UIN registration.
+- The assistant immediately continues the original booking flow.
+- The next question is a symptom-collection or appointment-booking question.
+- The assistant does not ask for the caller's name or phone number again.
+
+FAIL if ANY are true:
+- The assistant asks whether the caller wants to register after the corrected registration already succeeded.
+- The assistant says it still cannot find a matching patient record.
+- The assistant switches into identify_patient or returning-patient language.
+- The assistant resets with "What can I help you with today?"
+
+Output exactly one word: pass or fail.
+```
+
 ## Practical Note
 
 If the AI judge does not reliably notice tool names inside `{{messages}}`, split the longer flows into smaller checkpoints:

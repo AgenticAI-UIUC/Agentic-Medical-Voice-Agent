@@ -4,6 +4,7 @@ from supabase.lib.client_options import SyncClientOptions
 from app.config import settings
 
 _client: Client | None = None
+_POSTGREST_TIMEOUT_SECONDS = 8
 
 
 def get_supabase() -> Client:
@@ -15,6 +16,9 @@ def get_supabase() -> Client:
             options=SyncClientOptions(
                 auto_refresh_token=False,
                 persist_session=False,
+                # Vapi expects tool webhooks to answer quickly, so keep DB calls
+                # well under its timeout and let the assistant retry cleanly.
+                postgrest_client_timeout=_POSTGREST_TIMEOUT_SECONDS,
             ),
         )
     return _client

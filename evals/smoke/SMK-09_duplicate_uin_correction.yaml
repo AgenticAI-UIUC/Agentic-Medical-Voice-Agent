@@ -1,0 +1,81 @@
+id: SMK-09
+title: Duplicate-UIN correction retries registration without losing context
+priority: P1
+category: conversation-regression
+needs_fresh_uin: true
+mutates_database: true
+
+goal: >
+  Catch the regression where a new-patient registration attempt hits
+  `ALREADY_EXISTS`, the caller denies that identity, and the assistant wrongly
+  switches into returning-patient lookup instead of retrying registration with
+  the corrected UIN and the already collected demographics.
+
+seed_dependencies:
+  patients:
+    - Alice Wang / 123456789
+
+test_data:
+  duplicate_uin: "123456789"
+  corrected_uin: "123456770"
+  full_name: Taylor Reed
+  phone: "12345678"
+
+stop_condition: End the run after the assistant asks its first symptom-collection question after the corrected-UIN registration succeeds.
+
+user_script:
+  - speaker: user
+    text: I'd like to make an appointment.
+  - speaker: user
+    text: This is my first time.
+  - speaker: user
+    text: My UIN is one two three four five six seven eight nine.
+  - speaker: user
+    text: Yes.
+  - speaker: user
+    text: My name is Taylor Reed.
+  - speaker: user
+    text: My phone number is one two three four five six seven eight.
+  - speaker: user
+    text: Yes.
+  - speaker: user
+    text: No, that's not me.
+  - speaker: user
+    text: My UIN is one two three four five six seven seven zero.
+  - speaker: user
+    text: Yes.
+
+expected_tool_path:
+  - tool: register_patient
+    expect_status:
+      - ALREADY_EXISTS
+    args_match:
+      uin: "123456789"
+      full_name: Taylor Reed
+      phone_digits: "12345678"
+  - tool: register_patient
+    expect_status:
+      - REGISTERED
+    args_match:
+      uin: "123456770"
+      full_name: Taylor Reed
+      phone_digits: "12345678"
+
+must_do:
+  - Treat the first `ALREADY_EXISTS` result as a duplicate-UIN correction path, not a returning-patient lookup.
+  - Ask only for the corrected UIN after the caller denies the wrong identity.
+  - Preserve the already collected full name and phone number for the retry.
+  - Acknowledge the successful corrected-UIN registration briefly.
+  - Move directly into symptom collection after the corrected registration.
+
+must_not_do:
+  - Call identify_patient after the caller denies the duplicate-UIN identity.
+  - Ask for the caller's full name again before retrying register_patient.
+  - Ask for the caller's phone number again before retrying register_patient.
+  - Say "I'm still not finding a match" after the corrected-UIN retry.
+  - Ask whether the caller would like to register after the corrected-UIN retry.
+
+failure_signals:
+  - identify_patient appears anywhere after the first register_patient call returns ALREADY_EXISTS.
+  - The second register_patient call omits full_name or phone.
+  - The assistant loops into a returning-patient not-found flow instead of continuing registration.

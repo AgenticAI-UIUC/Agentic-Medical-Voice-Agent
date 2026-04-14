@@ -28,12 +28,32 @@ def _normalize_uin(raw: str) -> str:
     return re.sub(r"\D", "", raw)
 
 
+def _invalid_uin_result(uin: str, *, action: str) -> dict[str, Any]:
+    if not uin:
+        return {
+            "status": "INVALID",
+            "reason": "MISSING_UIN",
+            "message": "I didn't catch your UIN. Could you repeat it?",
+        }
+
+    received_digits = len(uin)
+    return {
+        "status": "INVALID",
+        "reason": "WRONG_LENGTH",
+        "expected_digits": 9,
+        "received_digits": received_digits,
+        "message": (
+            f"I heard {received_digits} digits, but I need your 9-digit university UIN to {action}."
+        ),
+    }
+
+
 def _lookup_patient(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     uin = _normalize_uin(args.get("uin") or "")
     if not uin:
-        return {"status": "INVALID", "message": "I didn't catch your UIN. Could you repeat it?"}
+        return _invalid_uin_result(uin, action="look up your record")
     if len(uin) != 9 or not uin.isdigit():
-        return {"status": "INVALID", "message": "I need your 9-digit university UIN to look up your record."}
+        return _invalid_uin_result(uin, action="look up your record")
 
     sb = get_supabase()
     res = sb.table("patients").select("id,uin,full_name,phone,email,allergies").eq("uin", uin).limit(1).execute()
@@ -66,7 +86,7 @@ def _register_patient(args: dict[str, Any], payload: dict[str, Any]) -> dict[str
     phone = normalize_phone(args.get("phone") or "")
 
     if not uin or len(uin) != 9 or not uin.isdigit():
-        return {"status": "INVALID", "message": "I need your 9-digit university UIN to register you."}
+        return _invalid_uin_result(uin, action="register you")
     if not full_name:
         return {"status": "INVALID", "message": "I need your full name to register you."}
     if not phone:
