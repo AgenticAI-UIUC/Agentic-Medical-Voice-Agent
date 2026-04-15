@@ -45,6 +45,37 @@ order by p.full_name, a.start_at;
 ```
 
 If you rerun the seed on `April 14, 2026`, Henry Mo's seeded appointment should be with `Dr. James Wilson` on `Wednesday, April 22, 2026 at 9:30 AM` Chicago time.
+
+
+
+### Optional Database Reset Before Testing
+
+If you want a clean test run in Supabase without rebuilding the schema, wipe this app's data first in the Supabase SQL Editor:
+
+```sql
+TRUNCATE TABLE
+  public.appointments,
+  public.conversations,
+  public.doctor_blocks,
+  public.doctor_availability,
+  public.doctor_specialties,
+  public.symptom_specialty_map,
+  public.patients,
+  public.doctors,
+  public.specialties
+RESTART IDENTITY CASCADE;
+```
+
+Then rerun the seed data:
+
+```sql
+-- paste backend/seed.sql into the SQL Editor
+```
+
+
+
+
+
 ## Part 1: Henry Long Books an Appointment
 
 Goal: show booking for an existing patient without registration.
