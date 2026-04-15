@@ -55,13 +55,13 @@ Symptom Collection
   │  "Do you have a specialist preference?"
   │
   ▼
-Triage Loop (up to 5 rounds)
+Triage Loop (up to 2 rounds)
   │  Call triage with symptoms
   │  ├─ Confidence ≥ 60% → Specialty determined
   │  └─ Confidence < 60% → Ask follow-up questions → re-triage
   │
-  │  If still undetermined after 5 rounds:
-  │  └─ Use patient's preferred specialty, or list_specialties for manual pick
+  │  If still undetermined after 2 rounds:
+  │  └─ Use patient's preferred specialty, or recommend General Practice first via list_specialties
   │
   ▼
 Specialty Confirmation
@@ -167,7 +167,7 @@ Confirm Cancellation
 ## Key Design Decisions
 
 - **Stateless slot computation.** Available times are computed on every request from weekly templates minus booked appointments and blocks. No cron jobs, no stale pre-generated data.
-- **Confidence-based triage.** Symptoms are scored against a weighted mapping table. If the top candidate's confidence exceeds 60%, a specialty is recommended. Otherwise, follow-up questions are asked (up to 5 rounds).
+- **Confidence-based triage.** Symptoms are scored against a weighted mapping table. If the top candidate's confidence exceeds 60%, a specialty is recommended. Otherwise, follow-up questions are asked briefly, then the assistant falls back after 2 rounds to the patient's preference or a General Practice recommendation.
 - **Atomic rescheduling.** `reschedule_finalize` books the new slot and cancels the old one in a single operation. If the cancel fails, the patient gets a partial-failure notice instead of a silent error.
 - **Timezone-aware formatting.** All times stored in UTC. Voice labels are converted to the clinic's local timezone (`CLINIC_TIMEZONE`) for natural readback — "Wednesday, April 8 at 1 PM" instead of raw ISO strings.
 - **Backend validates, not the LLM.** The system prompt tells the voice agent not to count digits or validate phone numbers itself — the backend handles all validation and returns clear error messages for the LLM to relay. The assistant should repeat the tool's actual `message`, not invent a new reason such as claiming a confirmed 9-digit UIN is only 8 digits.
@@ -434,7 +434,7 @@ Symptoms: "chest pain, shortness of breath"
   Pulmonology total: 1.5
 ```
 
-The triage loop runs up to 5 times. If no specialty is determined after 5 rounds, the system falls back to the patient's stated preference or lists all specialties for manual selection.
+The triage loop runs up to 2 times. If no specialty is determined after 2 rounds, the system falls back to the patient's stated preference or lists specialties with a preference for recommending General Practice as the safest general starting point.
 
 ## Slot Engine
 
@@ -536,7 +536,7 @@ Analyze patient symptoms to determine the appropriate medical specialty. May ret
 
 ### list_specialties
 
-List all available medical specialties. Used as a fallback when triage cannot determine a specialty.
+List all available medical specialties. Used as a fallback when triage cannot determine a specialty. When General Practice is available, the assistant should prefer recommending it first as a safe general entry point because a GP can evaluate the patient and route them to a specialist if needed.
 
 ```json
 {

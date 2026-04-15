@@ -2298,7 +2298,7 @@ Use this exact turn order:
 `cancel`
 
 ```json
-{"status":"CANCELLED","appointment_id":"d0000000-0000-0000-0000-000000000001","doctor_name":"Dr. Maria Torres","message":"Your appointment with Dr. Maria Torres has been cancelled. The time slot is now freed up."}
+{"status":"CANCELLED","appointment_id":"d0000000-0000-0000-0000-000000000001","doctor_name":"Dr. Maria Torres","message":"Your appointment with Dr. Maria Torres has been cancelled."}
 ```
 
 ### Judge Prompt

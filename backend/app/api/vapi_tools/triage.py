@@ -60,10 +60,19 @@ def _handle_triage(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
 def _handle_list_specialties(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     specialties = get_all_specialties()
     names = [s["name"] for s in specialties]
+    has_general_practice = any(name == "General Practice" for name in names)
+    if has_general_practice:
+        message = (
+            "If you're not sure which specialist is best, we can start with General Practice. "
+            "A GP can evaluate you first and guide you to a specialist if needed. "
+            f"We also have specialists in: {', '.join(names)}. Which would you prefer?"
+        )
+    else:
+        message = f"We have specialists in: {', '.join(names)}. Which would you prefer?"
     return {
         "status": "OK",
         "specialties": specialties,
-        "message": f"We have specialists in: {', '.join(names)}. Which would you prefer?",
+        "message": message,
     }
 
 
