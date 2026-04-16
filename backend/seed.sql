@@ -195,22 +195,22 @@ INSERT INTO public.doctor_availability (doctor_id, day_of_week, start_time, end_
 
 -- Dr. Johnson — Mon/Tue/Wed, mornings only
 INSERT INTO public.doctor_availability (doctor_id, day_of_week, start_time, end_time, slot_minutes) VALUES
-  ('b0000000-0000-0000-0000-000000000003', 1, '09:00', '13:00', 30),
-  ('b0000000-0000-0000-0000-000000000003', 2, '09:00', '13:00', 30),
-  ('b0000000-0000-0000-0000-000000000003', 3, '09:00', '13:00', 30);
+  ('b0000000-0000-0000-0000-000000000003', 1, '09:00', '13:00', 60),
+  ('b0000000-0000-0000-0000-000000000003', 2, '09:00', '13:00', 60),
+  ('b0000000-0000-0000-0000-000000000003', 3, '09:00', '13:00', 60);
 
 -- Dr. Wilson — Mon through Fri, full day
 INSERT INTO public.doctor_availability (doctor_id, day_of_week, start_time, end_time, slot_minutes) VALUES
-  ('b0000000-0000-0000-0000-000000000004', 1, '08:00', '12:00', 45),
-  ('b0000000-0000-0000-0000-000000000004', 1, '13:00', '17:00', 45),
-  ('b0000000-0000-0000-0000-000000000004', 2, '08:00', '12:00', 45),
-  ('b0000000-0000-0000-0000-000000000004', 2, '13:00', '17:00', 45),
-  ('b0000000-0000-0000-0000-000000000004', 3, '08:00', '12:00', 45),
-  ('b0000000-0000-0000-0000-000000000004', 3, '13:00', '17:00', 45),
-  ('b0000000-0000-0000-0000-000000000004', 4, '08:00', '12:00', 45),
-  ('b0000000-0000-0000-0000-000000000004', 4, '13:00', '17:00', 45),
-  ('b0000000-0000-0000-0000-000000000004', 5, '08:00', '12:00', 45),
-  ('b0000000-0000-0000-0000-000000000004', 5, '13:00', '17:00', 45);
+  ('b0000000-0000-0000-0000-000000000004', 1, '08:00', '12:00', 60),
+  ('b0000000-0000-0000-0000-000000000004', 1, '13:00', '17:00', 60),
+  ('b0000000-0000-0000-0000-000000000004', 2, '08:00', '12:00', 60),
+  ('b0000000-0000-0000-0000-000000000004', 2, '13:00', '17:00', 60),
+  ('b0000000-0000-0000-0000-000000000004', 3, '08:00', '12:00', 60),
+  ('b0000000-0000-0000-0000-000000000004', 3, '13:00', '17:00', 60),
+  ('b0000000-0000-0000-0000-000000000004', 4, '08:00', '12:00', 60),
+  ('b0000000-0000-0000-0000-000000000004', 4, '13:00', '17:00', 60),
+  ('b0000000-0000-0000-0000-000000000004', 5, '08:00', '12:00', 60),
+  ('b0000000-0000-0000-0000-000000000004', 5, '13:00', '17:00', 60);
 
 -- Dr. Patel — Wed/Thu afternoons, Friday extended afternoon block
 INSERT INTO public.doctor_availability (doctor_id, day_of_week, start_time, end_time, slot_minutes) VALUES
@@ -227,10 +227,10 @@ INSERT INTO public.doctor_availability (doctor_id, day_of_week, start_time, end_
 
 -- Dr. Martinez — Tue/Thu, full day
 INSERT INTO public.doctor_availability (doctor_id, day_of_week, start_time, end_time, slot_minutes) VALUES
-  ('b0000000-0000-0000-0000-000000000007', 2, '09:00', '12:00', 30),
-  ('b0000000-0000-0000-0000-000000000007', 2, '13:00', '17:00', 30),
-  ('b0000000-0000-0000-0000-000000000007', 4, '09:00', '12:00', 30),
-  ('b0000000-0000-0000-0000-000000000007', 4, '13:00', '17:00', 30);
+  ('b0000000-0000-0000-0000-000000000007', 2, '09:00', '12:00', 60),
+  ('b0000000-0000-0000-0000-000000000007', 2, '13:00', '17:00', 60),
+  ('b0000000-0000-0000-0000-000000000007', 4, '09:00', '12:00', 60),
+  ('b0000000-0000-0000-0000-000000000007', 4, '13:00', '17:00', 60);
 
 -- Dr. Okafor — Mon/Tue/Thu/Fri, mornings
 INSERT INTO public.doctor_availability (doctor_id, day_of_week, start_time, end_time, slot_minutes) VALUES
@@ -294,7 +294,7 @@ ON CONFLICT (id) DO NOTHING;
 --    'b0000000-0000-0000-0000-000000000003',
 --    'a0000000-0000-0000-0000-000000000003',
 --    (date_trunc('week', now()) + interval '7 days' + interval '10 hours')::timestamptz,
---    (date_trunc('week', now()) + interval '7 days' + interval '10 hours 30 minutes')::timestamptz,
+--    (date_trunc('week', now()) + interval '7 days' + interval '11 hours')::timestamptz,
 --    'Persistent rash on arm', 'rash, itching', 4, 'ROUTINE', 'CONFIRMED')
 -- ON CONFLICT (id) DO NOTHING;
 
@@ -326,7 +326,7 @@ ON CONFLICT (id) DO NOTHING;
 --    'c0000000-0000-0000-0000-000000000006',
 --    'b0000000-0000-0000-0000-000000000007',
 --    'a0000000-0000-0000-0000-000000000009',
---    (date_trunc('week', now()) + interval '8 days' + interval '9 hours 30 minutes')::timestamptz,
+--    (date_trunc('week', now()) + interval '8 days' + interval '9 hours')::timestamptz,
 --    (date_trunc('week', now()) + interval '8 days' + interval '10 hours')::timestamptz,
 --    'Ear pain follow-up', 'ear pain', 4, 'ROUTINE', 'CONFIRMED')
 -- ON CONFLICT (id) DO NOTHING;
@@ -337,7 +337,7 @@ ON CONFLICT (id) DO NOTHING;
 --    'b0000000-0000-0000-0000-000000000007',
 --    'a0000000-0000-0000-0000-000000000008',
 --    (date_trunc('week', now()) + interval '10 days' + interval '14 hours')::timestamptz,
---    (date_trunc('week', now()) + interval '10 days' + interval '14 hours 30 minutes')::timestamptz,
+--    (date_trunc('week', now()) + interval '10 days' + interval '15 hours')::timestamptz,
 --    'Blurry vision follow-up', 'blurry vision', 3, 'ROUTINE', 'CONFIRMED')
 -- ON CONFLICT (id) DO NOTHING;
 
@@ -349,8 +349,8 @@ INSERT INTO public.appointments (id, patient_id, doctor_id, specialty_id, start_
    'c0000000-0000-0000-0000-000000000008',
    'b0000000-0000-0000-0000-000000000004',
    'a0000000-0000-0000-0000-000000000004',
-   (date_trunc('week', now()) + interval '9 days' + interval '9 hours 30 minutes')::timestamptz,
-   (date_trunc('week', now()) + interval '9 days' + interval '10 hours 15 minutes')::timestamptz,
+   (date_trunc('week', now()) + interval '9 days' + interval '14 hours')::timestamptz,
+   (date_trunc('week', now()) + interval '9 days' + interval '15 hours')::timestamptz,
    'Ongoing shoulder pain', 'shoulder pain, joint pain', 5, 'ROUTINE', 'CONFIRMED')
 ON CONFLICT (id) DO NOTHING;
 
