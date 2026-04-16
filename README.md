@@ -457,7 +457,7 @@ The slot engine computes available appointment times on-the-fly from weekly temp
 
 These are the tools configured in the Vapi dashboard. Each tool calls a backend endpoint via Vapi's server URL.
 
-Prompt/tool alignment note: if the live assistant still self-validates UIN length or invents `INVALID` reasons after you update this repo, refresh the system prompt in the Vapi dashboard so the hosted assistant matches the checked-in prompt.
+Prompt/tool alignment note: if the live assistant still self-validates UIN length, repeats a UIN confirmation twice in the same turn, or invents `INVALID` reasons after you update this repo, refresh the system prompt in the Vapi dashboard so the hosted assistant matches the checked-in prompt.
 
 ### identify_patient
 

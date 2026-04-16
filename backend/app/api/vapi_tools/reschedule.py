@@ -6,7 +6,13 @@ from fastapi import APIRouter, Request
 
 from datetime import datetime
 
-from app.api.vapi_helpers import get_call_id, handle_tool_calls
+from app.api.vapi_helpers import (
+    coerce_bool,
+    coerce_string,
+    get_call_id,
+    handle_tool_calls,
+    is_valid_uuid,
+)
 from app.services.slot_engine import find_slots_for_specialty, validate_slot, is_next_available_request
 from app.services.time_utils import format_for_voice, now_utc, parse_time_bucket
 from app.supabase import get_supabase
@@ -41,13 +47,13 @@ def _relaxed_reschedule_message(preferred_time: str, slots: list[dict[str, Any]]
 
 def _handle_find_appointment(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     """Find a patient's existing appointment for rescheduling or cancellation."""
-    patient_id = args.get("patient_id")
+    patient_id = coerce_string(args.get("patient_id"))
     if not patient_id:
         return {"status": "INVALID", "message": "I need your patient information first."}
 
-    doctor_name = (args.get("doctor_name") or "").strip().lower()
-    reason = (args.get("reason") or "").strip().lower()
-    include_past = bool(args.get("include_past"))
+    doctor_name = coerce_string(args.get("doctor_name")).lower()
+    reason = coerce_string(args.get("reason")).lower()
+    include_past = coerce_bool(args.get("include_past"))
 
     sb = get_supabase()
 
@@ -141,26 +147,17 @@ def _handle_find_appointment(args: dict[str, Any], payload: dict[str, Any]) -> d
     }
 
 
-def _is_valid_uuid(val: str) -> bool:
-    import uuid
-    try:
-        uuid.UUID(val)
-        return True
-    except (ValueError, AttributeError):
-        return False
-
-
 def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     """Cancel old appointment and find new slots for same specialty."""
-    appointment_id = args.get("appointment_id")
-    patient_id = args.get("patient_id")
-    preferred_day = args.get("preferred_day", "")
-    preferred_time = args.get("preferred_time", "")
+    appointment_id = coerce_string(args.get("appointment_id"))
+    patient_id = coerce_string(args.get("patient_id")) or None
+    preferred_day = coerce_string(args.get("preferred_day"))
+    preferred_time = coerce_string(args.get("preferred_time"))
 
     if not appointment_id:
         return {"status": "INVALID", "message": "I need to know which appointment to reschedule."}
 
-    if not _is_valid_uuid(appointment_id):
+    if not is_valid_uuid(appointment_id):
         return {"status": "INVALID", "message": "The appointment ID is not valid. Please try finding the appointment again."}
 
     sb = get_supabase()
@@ -235,18 +232,18 @@ def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
 
 def _handle_reschedule_finalize(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     """Atomically book a new slot and cancel the original appointment via a single DB transaction."""
-    original_appointment_id = args.get("original_appointment_id")
-    patient_id = args.get("patient_id")
-    doctor_id = args.get("doctor_id")
-    start_at = args.get("start_at")
-    end_at = args.get("end_at")
+    original_appointment_id = coerce_string(args.get("original_appointment_id"))
+    patient_id = coerce_string(args.get("patient_id"))
+    doctor_id = coerce_string(args.get("doctor_id"))
+    start_at = coerce_string(args.get("start_at"))
+    end_at = coerce_string(args.get("end_at"))
 
     if not all([original_appointment_id, patient_id, doctor_id, start_at, end_at]):
         return {"status": "INVALID", "message": "Missing required rescheduling information."}
 
     for id_field, id_val in [("original_appointment_id", original_appointment_id),
                               ("patient_id", patient_id), ("doctor_id", doctor_id)]:
-        if not _is_valid_uuid(id_val):
+        if not is_valid_uuid(id_val):
             return {"status": "INVALID", "message": f"The {id_field} is not valid. Please try again."}
 
     # Parse start/end times
@@ -255,6 +252,9 @@ def _handle_reschedule_finalize(args: dict[str, Any], payload: dict[str, Any]) -
         end_dt = datetime.fromisoformat(end_at.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
         return {"status": "INVALID", "message": "I couldn't understand the appointment time."}
+
+    if start_dt >= end_dt:
+        return {"status": "INVALID", "message": "The appointment end time must be after the start time."}
 
     # Validate that the new slot is real doctor availability
     slot_error = validate_slot(doctor_id, start_dt, end_dt)
@@ -291,8 +291,8 @@ def _handle_reschedule_finalize(args: dict[str, Any], payload: dict[str, Any]) -
         "p_doctor_id": doctor_id,
         "p_start_at": start_at,
         "p_end_at": end_at,
-        "p_specialty_id": args.get("specialty_id") or original.get("specialty_id"),
-        "p_reason": args.get("reason") or original.get("reason"),
+        "p_specialty_id": coerce_string(args.get("specialty_id")) or original.get("specialty_id"),
+        "p_reason": coerce_string(args.get("reason")) or original.get("reason"),
         "p_symptoms": original.get("symptoms"),
         "p_severity_description": original.get("severity_description"),
         "p_severity_rating": original.get("severity_rating"),

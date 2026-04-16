@@ -85,6 +85,37 @@ def test_handle_find_appointment_supports_follow_up_lookup_with_completed_visit(
     assert result["appointment"]["doctor_name"] == "Dr. Sarah Chen"
 
 
+def test_handle_find_appointment_treats_false_string_as_false_for_include_past(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    appointments = [
+        {
+            "id": VALID_APPOINTMENT_ID,
+            "doctor_id": VALID_DOCTOR_ID,
+            "specialty_id": "gp",
+            "start_at": "2026-04-01T16:00:00Z",
+            "end_at": "2026-04-01T17:00:00Z",
+            "reason": "Annual checkup",
+            "symptoms": "general checkup",
+            "status": "COMPLETED",
+            "doctors": {"full_name": "Dr. Sarah Chen"},
+        }
+    ]
+    sb = MockSupabase(tables={"appointments": [MockQuery(data=appointments)]})
+    monkeypatch.setattr(reschedule, "get_supabase", lambda: sb)
+    monkeypatch.setattr(reschedule, "now_utc", lambda: FIXED_NOW)
+
+    result = reschedule._handle_find_appointment(
+        {
+            "patient_id": VALID_PATIENT_ID,
+            "include_past": "false",
+        },
+        {},
+    )
+
+    assert result["status"] == "NO_APPOINTMENTS"
+
+
 def test_handle_find_appointment_returns_multiple_choices(monkeypatch: pytest.MonkeyPatch) -> None:
     appointments = [
         {
@@ -160,6 +191,50 @@ def test_handle_reschedule_returns_no_slots(monkeypatch: pytest.MonkeyPatch) -> 
     )
 
     assert result["status"] == "NO_SLOTS"
+
+
+def test_handle_reschedule_normalizes_non_string_preferences(monkeypatch: pytest.MonkeyPatch) -> None:
+    sb = MockSupabase(
+        tables={
+            "appointments": [
+                MockQuery(
+                    data=[
+                        {
+                            "id": VALID_APPOINTMENT_ID,
+                            "specialty_id": "derm",
+                            "doctor_id": VALID_DOCTOR_ID,
+                            "status": "CONFIRMED",
+                        }
+                    ]
+                )
+            ]
+        }
+    )
+    calls: list[tuple[str, str, str]] = []
+
+    def fake_find_slots_for_specialty(
+        specialty_id: str,
+        preferred_day: str,
+        preferred_time: str,
+    ) -> list[dict[str, str]]:
+        calls.append((specialty_id, preferred_day, preferred_time))
+        return []
+
+    monkeypatch.setattr(reschedule, "get_supabase", lambda: sb)
+    monkeypatch.setattr(reschedule, "find_slots_for_specialty", fake_find_slots_for_specialty)
+
+    result = reschedule._handle_reschedule(
+        {
+            "appointment_id": VALID_APPOINTMENT_ID,
+            "patient_id": VALID_PATIENT_ID,
+            "preferred_day": 42,
+            "preferred_time": ["morning"],
+        },
+        {},
+    )
+
+    assert result["status"] == "NO_SLOTS"
+    assert calls == [("derm", "", "")]
 
 
 def test_handle_reschedule_relaxes_asap_time_bucket_when_no_exact_match(
@@ -325,6 +400,74 @@ def test_handle_reschedule_finalize_rejects_invalid_datetimes() -> None:
 
     assert result["status"] == "INVALID"
     assert "couldn't understand" in result["message"]
+
+
+def test_handle_reschedule_finalize_rejects_end_before_start() -> None:
+    result = reschedule._handle_reschedule_finalize(
+        {
+            "original_appointment_id": VALID_APPOINTMENT_ID,
+            "patient_id": VALID_PATIENT_ID,
+            "doctor_id": VALID_DOCTOR_ID,
+            "start_at": "2026-04-10T17:00:00Z",
+            "end_at": "2026-04-10T16:00:00Z",
+        },
+        {},
+    )
+
+    assert result == {
+        "status": "INVALID",
+        "message": "The appointment end time must be after the start time.",
+    }
+
+
+def test_handle_reschedule_finalize_sanitizes_optional_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(reschedule, "validate_slot", lambda *args, **kwargs: None)
+    monkeypatch.setattr(reschedule, "get_call_id", lambda payload: "call-999")
+    monkeypatch.setattr(reschedule, "format_for_voice", lambda dt: "Friday, April 10 at 11 AM")
+
+    sb = MockSupabase(
+        tables={
+            "appointments": [
+                MockQuery(
+                    data=[
+                        {
+                            "id": VALID_APPOINTMENT_ID,
+                            "specialty_id": "derm",
+                            "reason": "follow up",
+                            "symptoms": "rash",
+                            "severity_description": None,
+                            "severity_rating": None,
+                            "urgency": "ROUTINE",
+                        }
+                    ]
+                )
+            ],
+            "doctors": [MockQuery(data=[{"full_name": "Dr. Adams"}])],
+        },
+        rpcs={
+            "reschedule_appointment": [
+                MockQuery(data={"status": "RESCHEDULED", "new_appointment_id": "new-appt"})
+            ]
+        },
+    )
+    monkeypatch.setattr(reschedule, "get_supabase", lambda: sb)
+
+    result = reschedule._handle_reschedule_finalize(
+        {
+            "original_appointment_id": VALID_APPOINTMENT_ID,
+            "patient_id": VALID_PATIENT_ID,
+            "doctor_id": VALID_DOCTOR_ID,
+            "start_at": "2026-04-10T16:00:00Z",
+            "end_at": "2026-04-10T17:00:00Z",
+            "specialty_id": ["bad"],
+            "reason": 5,
+        },
+        {},
+    )
+
+    assert result["status"] == "RESCHEDULED"
+    assert sb.rpc_calls[0][1]["p_specialty_id"] == "derm"
+    assert sb.rpc_calls[0][1]["p_reason"] == "follow up"
 
 
 def test_handle_reschedule_finalize_maps_rpc_not_active(monkeypatch: pytest.MonkeyPatch) -> None:

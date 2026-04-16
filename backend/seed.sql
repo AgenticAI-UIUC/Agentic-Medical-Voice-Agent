@@ -212,11 +212,11 @@ INSERT INTO public.doctor_availability (doctor_id, day_of_week, start_time, end_
   ('b0000000-0000-0000-0000-000000000004', 5, '08:00', '12:00', 45),
   ('b0000000-0000-0000-0000-000000000004', 5, '13:00', '17:00', 45);
 
--- Dr. Patel — Wed/Thu/Fri, afternoon only
+-- Dr. Patel — Wed/Thu afternoons, Friday extended afternoon block
 INSERT INTO public.doctor_availability (doctor_id, day_of_week, start_time, end_time, slot_minutes) VALUES
   ('b0000000-0000-0000-0000-000000000005', 3, '13:00', '18:00', 60),
   ('b0000000-0000-0000-0000-000000000005', 4, '13:00', '18:00', 60),
-  ('b0000000-0000-0000-0000-000000000005', 5, '13:00', '18:00', 60);
+  ('b0000000-0000-0000-0000-000000000005', 5, '12:00', '18:00', 60);
 
 -- Dr. Kim — Mon/Wed, morning + afternoon
 INSERT INTO public.doctor_availability (doctor_id, day_of_week, start_time, end_time, slot_minutes) VALUES
@@ -260,12 +260,12 @@ INSERT INTO public.doctor_blocks (doctor_id, start_at, end_at, reason) VALUES
 -- 7. Test Patients
 -- ============================================================
 INSERT INTO public.patients (id, uin, full_name, phone, email, allergies) VALUES
-  ('c0000000-0000-0000-0000-000000000001', '123456789', 'Alice Wang',     '2175551001', 'alice.wang@university.edu',    'Penicillin'),
-  ('c0000000-0000-0000-0000-000000000002', '234567890', 'Bob Martinez',   '2175551002', 'bob.martinez@university.edu',  null),
-  ('c0000000-0000-0000-0000-000000000003', '345678901', 'Carol Johnson',  '2175551003', 'carol.j@university.edu',       'Shellfish'),
-  ('c0000000-0000-0000-0000-000000000004', '456789012', 'David Lee',      '2175551004', 'david.lee@university.edu',     null),
-  ('c0000000-0000-0000-0000-000000000005', '567890123', 'Emma Thompson',  '2175551005', 'emma.t@university.edu',        'Latex, Sulfa'),
-  ('c0000000-0000-0000-0000-000000000006', '678901235', 'Nina Carter',    '2175551006', 'nina.carter@university.edu',  null),
+  -- ('c0000000-0000-0000-0000-000000000001', '123456789', 'Alice Wang',     '2175551001', 'alice.wang@university.edu',    'Penicillin'),
+  -- ('c0000000-0000-0000-0000-000000000002', '234567890', 'Bob Martinez',   '2175551002', 'bob.martinez@university.edu',  null),
+  -- ('c0000000-0000-0000-0000-000000000003', '345678901', 'Carol Johnson',  '2175551003', 'carol.j@university.edu',       'Shellfish'),
+  -- ('c0000000-0000-0000-0000-000000000004', '456789012', 'David Lee',      '2175551004', 'david.lee@university.edu',     null),
+  -- ('c0000000-0000-0000-0000-000000000005', '567890123', 'Emma Thompson',  '2175551005', 'emma.t@university.edu',        'Latex, Sulfa'),
+  -- ('c0000000-0000-0000-0000-000000000006', '678901235', 'Nina Carter',    '2175551006', 'nina.carter@university.edu',  null),
   ('c0000000-0000-0000-0000-000000000007', '246813579', 'Henry Long',     '2175551010', 'henry.long@demo.example.com', null),
   ('c0000000-0000-0000-0000-000000000008', '135792468', 'Henry Mo',       '2175551011', 'henry.mo@demo.example.com',   null)
 ON CONFLICT (id) DO NOTHING;
@@ -277,69 +277,69 @@ ON CONFLICT (id) DO NOTHING;
 -- ============================================================
 
 -- Alice has an upcoming cardiology appointment with Dr. Torres (next Tuesday 9 AM)
-INSERT INTO public.appointments (id, patient_id, doctor_id, specialty_id, start_at, end_at, reason, symptoms, severity_rating, urgency, status) VALUES
-  ('d0000000-0000-0000-0000-000000000001',
-   'c0000000-0000-0000-0000-000000000001',
-   'b0000000-0000-0000-0000-000000000002',
-   'a0000000-0000-0000-0000-000000000002',
-   (date_trunc('week', now()) + interval '8 days' + interval '9 hours')::timestamptz,
-   (date_trunc('week', now()) + interval '8 days' + interval '10 hours')::timestamptz,
-   'Recurring chest tightness', 'chest pain, shortness of breath', 6, 'ROUTINE', 'CONFIRMED')
-ON CONFLICT (id) DO NOTHING;
+-- INSERT INTO public.appointments (id, patient_id, doctor_id, specialty_id, start_at, end_at, reason, symptoms, severity_rating, urgency, status) VALUES
+--   ('d0000000-0000-0000-0000-000000000001',
+--    'c0000000-0000-0000-0000-000000000001',
+--    'b0000000-0000-0000-0000-000000000002',
+--    'a0000000-0000-0000-0000-000000000002',
+--    (date_trunc('week', now()) + interval '8 days' + interval '9 hours')::timestamptz,
+--    (date_trunc('week', now()) + interval '8 days' + interval '10 hours')::timestamptz,
+--    'Recurring chest tightness', 'chest pain, shortness of breath', 6, 'ROUTINE', 'CONFIRMED')
+-- ON CONFLICT (id) DO NOTHING;
 
 -- Bob has a dermatology appointment with Dr. Johnson (next Monday 10 AM)
-INSERT INTO public.appointments (id, patient_id, doctor_id, specialty_id, start_at, end_at, reason, symptoms, severity_rating, urgency, status) VALUES
-  ('d0000000-0000-0000-0000-000000000002',
-   'c0000000-0000-0000-0000-000000000002',
-   'b0000000-0000-0000-0000-000000000003',
-   'a0000000-0000-0000-0000-000000000003',
-   (date_trunc('week', now()) + interval '7 days' + interval '10 hours')::timestamptz,
-   (date_trunc('week', now()) + interval '7 days' + interval '10 hours 30 minutes')::timestamptz,
-   'Persistent rash on arm', 'rash, itching', 4, 'ROUTINE', 'CONFIRMED')
-ON CONFLICT (id) DO NOTHING;
+-- INSERT INTO public.appointments (id, patient_id, doctor_id, specialty_id, start_at, end_at, reason, symptoms, severity_rating, urgency, status) VALUES
+--   ('d0000000-0000-0000-0000-000000000002',
+--    'c0000000-0000-0000-0000-000000000002',
+--    'b0000000-0000-0000-0000-000000000003',
+--    'a0000000-0000-0000-0000-000000000003',
+--    (date_trunc('week', now()) + interval '7 days' + interval '10 hours')::timestamptz,
+--    (date_trunc('week', now()) + interval '7 days' + interval '10 hours 30 minutes')::timestamptz,
+--    'Persistent rash on arm', 'rash, itching', 4, 'ROUTINE', 'CONFIRMED')
+-- ON CONFLICT (id) DO NOTHING;
 
 -- Carol has a neurology appointment with Dr. Patel (next Thursday 2 PM)
-INSERT INTO public.appointments (id, patient_id, doctor_id, specialty_id, start_at, end_at, reason, symptoms, severity_rating, urgency, status) VALUES
-  ('d0000000-0000-0000-0000-000000000003',
-   'c0000000-0000-0000-0000-000000000003',
-   'b0000000-0000-0000-0000-000000000005',
-   'a0000000-0000-0000-0000-000000000005',
-   (date_trunc('week', now()) + interval '10 days' + interval '14 hours')::timestamptz,
-   (date_trunc('week', now()) + interval '10 days' + interval '15 hours')::timestamptz,
-   'Frequent migraines', 'migraine, headache, nausea', 7, 'ROUTINE', 'CONFIRMED')
-ON CONFLICT (id) DO NOTHING;
+-- INSERT INTO public.appointments (id, patient_id, doctor_id, specialty_id, start_at, end_at, reason, symptoms, severity_rating, urgency, status) VALUES
+--   ('d0000000-0000-0000-0000-000000000003',
+--    'c0000000-0000-0000-0000-000000000003',
+--    'b0000000-0000-0000-0000-000000000005',
+--    'a0000000-0000-0000-0000-000000000005',
+--    (date_trunc('week', now()) + interval '10 days' + interval '14 hours')::timestamptz,
+--    (date_trunc('week', now()) + interval '10 days' + interval '15 hours')::timestamptz,
+--    'Frequent migraines', 'migraine, headache, nausea', 7, 'ROUTINE', 'CONFIRMED')
+-- ON CONFLICT (id) DO NOTHING;
 
 -- David has a past completed general practice visit (last week)
-INSERT INTO public.appointments (id, patient_id, doctor_id, specialty_id, start_at, end_at, reason, symptoms, severity_rating, urgency, status) VALUES
-  ('d0000000-0000-0000-0000-000000000004',
-   'c0000000-0000-0000-0000-000000000004',
-   'b0000000-0000-0000-0000-000000000001',
-   'a0000000-0000-0000-0000-000000000001',
-   (date_trunc('day', now() - interval '5 days') + interval '9 hours')::timestamptz,
-   (date_trunc('day', now() - interval '5 days') + interval '10 hours')::timestamptz,
-   'Annual checkup', 'general checkup', 1, 'ROUTINE', 'COMPLETED')
-ON CONFLICT (id) DO NOTHING;
+-- INSERT INTO public.appointments (id, patient_id, doctor_id, specialty_id, start_at, end_at, reason, symptoms, severity_rating, urgency, status) VALUES
+--   ('d0000000-0000-0000-0000-000000000004',
+--    'c0000000-0000-0000-0000-000000000004',
+--    'b0000000-0000-0000-0000-000000000001',
+--    'a0000000-0000-0000-0000-000000000001',
+--    (date_trunc('day', now() - interval '5 days') + interval '9 hours')::timestamptz,
+--    (date_trunc('day', now() - interval '5 days') + interval '10 hours')::timestamptz,
+--    'Annual checkup', 'general checkup', 1, 'ROUTINE', 'COMPLETED')
+-- ON CONFLICT (id) DO NOTHING;
 
 -- Nina has two future appointments to test multi-appointment disambiguation
-INSERT INTO public.appointments (id, patient_id, doctor_id, specialty_id, start_at, end_at, reason, symptoms, severity_rating, urgency, status) VALUES
-  ('d0000000-0000-0000-0000-000000000005',
-   'c0000000-0000-0000-0000-000000000006',
-   'b0000000-0000-0000-0000-000000000007',
-   'a0000000-0000-0000-0000-000000000009',
-   (date_trunc('week', now()) + interval '8 days' + interval '9 hours 30 minutes')::timestamptz,
-   (date_trunc('week', now()) + interval '8 days' + interval '10 hours')::timestamptz,
-   'Ear pain follow-up', 'ear pain', 4, 'ROUTINE', 'CONFIRMED')
-ON CONFLICT (id) DO NOTHING;
+-- INSERT INTO public.appointments (id, patient_id, doctor_id, specialty_id, start_at, end_at, reason, symptoms, severity_rating, urgency, status) VALUES
+--   ('d0000000-0000-0000-0000-000000000005',
+--    'c0000000-0000-0000-0000-000000000006',
+--    'b0000000-0000-0000-0000-000000000007',
+--    'a0000000-0000-0000-0000-000000000009',
+--    (date_trunc('week', now()) + interval '8 days' + interval '9 hours 30 minutes')::timestamptz,
+--    (date_trunc('week', now()) + interval '8 days' + interval '10 hours')::timestamptz,
+--    'Ear pain follow-up', 'ear pain', 4, 'ROUTINE', 'CONFIRMED')
+-- ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO public.appointments (id, patient_id, doctor_id, specialty_id, start_at, end_at, reason, symptoms, severity_rating, urgency, status) VALUES
-  ('d0000000-0000-0000-0000-000000000006',
-   'c0000000-0000-0000-0000-000000000006',
-   'b0000000-0000-0000-0000-000000000007',
-   'a0000000-0000-0000-0000-000000000008',
-   (date_trunc('week', now()) + interval '10 days' + interval '14 hours')::timestamptz,
-   (date_trunc('week', now()) + interval '10 days' + interval '14 hours 30 minutes')::timestamptz,
-   'Blurry vision follow-up', 'blurry vision', 3, 'ROUTINE', 'CONFIRMED')
-ON CONFLICT (id) DO NOTHING;
+-- INSERT INTO public.appointments (id, patient_id, doctor_id, specialty_id, start_at, end_at, reason, symptoms, severity_rating, urgency, status) VALUES
+--   ('d0000000-0000-0000-0000-000000000006',
+--    'c0000000-0000-0000-0000-000000000006',
+--    'b0000000-0000-0000-0000-000000000007',
+--    'a0000000-0000-0000-0000-000000000008',
+--    (date_trunc('week', now()) + interval '10 days' + interval '14 hours')::timestamptz,
+--    (date_trunc('week', now()) + interval '10 days' + interval '14 hours 30 minutes')::timestamptz,
+--    'Blurry vision follow-up', 'blurry vision', 3, 'ROUTINE', 'CONFIRMED')
+-- ON CONFLICT (id) DO NOTHING;
 
 -- Henry Mo has one upcoming appointment for the reschedule demo.
 -- Henry Long is seeded only as a patient so he can demo booking as an
@@ -361,17 +361,11 @@ ON CONFLICT (id) DO NOTHING;
 -- Specialties:  10 (General Practice through Pulmonology)
 -- Symptoms:     ~50 mapped to specialties with weights and follow-up questions
 -- Doctors:       8 with varied availability schedules
--- Patients:      8 including Henry Long, Henry Mo, and QA patient Nina Carter
--- Appointments:  7 (6 upcoming CONFIRMED, 1 past COMPLETED)
+-- Patients:      2 for the demo flow (Henry Long and Henry Mo)
+-- Appointments:  1 upcoming CONFIRMED (Henry Mo)
 -- Blocks:        2 (Dr. Chen conference, Dr. Wilson personal)
 --
 -- Test UINs for voice testing:
---   Alice Wang:      123456789
---   Bob Martinez:    234567890
---   Carol Johnson:   345678901
---   David Lee:       456789012
---   Emma Thompson:   567890123
 --   Henry Long:      246813579
 --   Henry Mo:        135792468
---   Nina Carter:     678901235
 -- ============================================================

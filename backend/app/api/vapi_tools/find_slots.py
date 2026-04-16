@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
-from app.api.vapi_helpers import handle_tool_calls
+from app.api.vapi_helpers import coerce_string, handle_tool_calls
 from app.services.slot_engine import find_slots_for_specialty, find_available_slots, is_next_available_request
 from app.services.time_utils import parse_time_bucket
 
@@ -60,11 +60,12 @@ def _relaxed_message(preferred_time: str, slots: list[dict[str, Any]], include_d
         f"but the earliest appointments I do have are {spoken}. Which one works best?"
     )
 
+
 def _handle_find_slots(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
-    specialty_id = args.get("specialty_id")
-    doctor_id = args.get("doctor_id")
-    preferred_day = args.get("preferred_day", "")
-    preferred_time = args.get("preferred_time", "")
+    specialty_id = coerce_string(args.get("specialty_id"))
+    doctor_id = coerce_string(args.get("doctor_id"))
+    preferred_day = coerce_string(args.get("preferred_day"))
+    preferred_time = coerce_string(args.get("preferred_time"))
 
     if doctor_id:
         # Direct doctor lookup (e.g. follow-up with same doctor)

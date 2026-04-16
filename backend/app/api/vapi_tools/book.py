@@ -5,26 +5,30 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
-from app.api.vapi_helpers import get_call_id, handle_tool_calls
+from app.api.vapi_helpers import (
+    coerce_allowed_string,
+    coerce_optional_int,
+    coerce_string,
+    get_call_id,
+    handle_tool_calls,
+)
 from app.services.slot_engine import validate_slot
 from app.services.time_utils import format_for_voice
 from app.supabase import get_supabase
 
 router = APIRouter()
 
+_ALLOWED_URGENCY = {"ROUTINE", "URGENT", "ER"}
+
 
 def _handle_book(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
-    patient_id = args.get("patient_id")
-    doctor_id = args.get("doctor_id")
-    start_at = args.get("start_at")
-    end_at = args.get("end_at")
+    patient_id = coerce_string(args.get("patient_id"))
+    doctor_id = coerce_string(args.get("doctor_id"))
+    start_at = coerce_string(args.get("start_at"))
+    end_at = coerce_string(args.get("end_at"))
 
     if not all([patient_id, doctor_id, start_at, end_at]):
         return {"status": "INVALID", "message": "Missing required booking information."}
-
-    # Validate and parse datetimes before touching the database
-    if not isinstance(start_at, str) or not isinstance(end_at, str):
-        return {"status": "INVALID", "message": "Start and end times must be valid date strings."}
 
     try:
         start_dt = datetime.fromisoformat(start_at.replace("Z", "+00:00"))
@@ -48,18 +52,21 @@ def _handle_book(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any
     doc_data = getattr(doc_res, "data", None) or []
     doctor_name = doc_data[0]["full_name"] if doc_data else "your doctor"
 
+    severity_rating = coerce_optional_int(args.get("severity_rating"), minimum=1, maximum=10)
+    urgency = coerce_allowed_string(args.get("urgency"), _ALLOWED_URGENCY, default="ROUTINE") or "ROUTINE"
+
     row: dict[str, Any] = {
         "patient_id": patient_id,
         "doctor_id": doctor_id,
         "start_at": start_at,
         "end_at": end_at,
-        "specialty_id": args.get("specialty_id"),
-        "follow_up_from_id": args.get("follow_up_from_id"),
-        "reason": (args.get("reason") or "").strip() or None,
-        "symptoms": (args.get("symptoms") or "").strip() or None,
-        "severity_description": (args.get("severity_description") or "").strip() or None,
-        "severity_rating": args.get("severity_rating"),
-        "urgency": args.get("urgency", "ROUTINE"),
+        "specialty_id": coerce_string(args.get("specialty_id")) or None,
+        "follow_up_from_id": coerce_string(args.get("follow_up_from_id")) or None,
+        "reason": coerce_string(args.get("reason")) or None,
+        "symptoms": coerce_string(args.get("symptoms")) or None,
+        "severity_description": coerce_string(args.get("severity_description")) or None,
+        "severity_rating": severity_rating,
+        "urgency": urgency,
         "status": "CONFIRMED",
         "vapi_call_id": vapi_call_id,
     }

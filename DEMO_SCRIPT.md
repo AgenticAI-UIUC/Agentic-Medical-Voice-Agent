@@ -92,7 +92,7 @@ Henry Long: My UIN is 246 813 579.
 Henry Long: Yes.
 
 If asked what the visit is for:
-Henry Long: I've had a headache.
+Henry Long: I have a headache.
 
 If asked to describe the issue:
 Henry Long: It was quite bad, i couldn't sleep at night.

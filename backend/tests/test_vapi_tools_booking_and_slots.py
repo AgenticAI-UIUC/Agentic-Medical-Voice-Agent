@@ -25,6 +25,32 @@ def test_handle_find_slots_returns_doctor_specific_no_slots(monkeypatch: pytest.
     assert result["slots"] == []
 
 
+def test_handle_find_slots_normalizes_non_string_preferences(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, str, str]] = []
+
+    def fake_find_slots_for_specialty(
+        specialty_id: str,
+        preferred_day: str,
+        preferred_time: str,
+    ) -> list[dict[str, str]]:
+        calls.append((specialty_id, preferred_day, preferred_time))
+        return []
+
+    monkeypatch.setattr(find_slots, "find_slots_for_specialty", fake_find_slots_for_specialty)
+
+    result = find_slots._handle_find_slots(
+        {
+            "specialty_id": "derm",
+            "preferred_day": 123,
+            "preferred_time": {"bucket": "morning"},
+        },
+        {},
+    )
+
+    assert result["status"] == "NO_SLOTS"
+    assert calls == [("derm", "", "")]
+
+
 def test_handle_find_slots_formats_specialty_results(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         find_slots,
@@ -241,3 +267,75 @@ def test_handle_book_inserts_appointment_and_returns_confirmation(monkeypatch: p
     assert insert_query.inserted_rows[0]["reason"] == "follow up"
     assert insert_query.inserted_rows[0]["symptoms"] == "rash"
     assert insert_query.inserted_rows[0]["severity_description"] == "itchy"
+
+
+def test_handle_book_normalizes_optional_fields_and_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(book, "validate_slot", lambda *args, **kwargs: None)
+    monkeypatch.setattr(book, "get_call_id", lambda payload: "call-456")
+    monkeypatch.setattr(book, "format_for_voice", lambda dt: "Tuesday, April 7 at 10 AM")
+
+    insert_query = MockQuery(data=[{"id": "appointment-2"}])
+    sb = MockSupabase(
+        tables={
+            "doctors": [MockQuery(data=[{"full_name": "Dr. Baker"}])],
+            "appointments": [insert_query],
+        }
+    )
+    monkeypatch.setattr(book, "get_supabase", lambda: sb)
+
+    result = book._handle_book(
+        {
+            "patient_id": "patient-2",
+            "doctor_id": "doctor-2",
+            "start_at": "2026-04-07T15:00:00Z",
+            "end_at": "2026-04-07T16:00:00Z",
+            "specialty_id": ["bad"],
+            "follow_up_from_id": {"id": "appt-1"},
+            "reason": 5,
+            "symptoms": True,
+            "severity_description": None,
+            "severity_rating": "11",
+            "urgency": "later",
+        },
+        {},
+    )
+
+    assert result["status"] == "CONFIRMED"
+    assert insert_query.inserted_rows[0]["specialty_id"] is None
+    assert insert_query.inserted_rows[0]["follow_up_from_id"] is None
+    assert insert_query.inserted_rows[0]["reason"] is None
+    assert insert_query.inserted_rows[0]["symptoms"] is None
+    assert insert_query.inserted_rows[0]["severity_description"] is None
+    assert insert_query.inserted_rows[0]["severity_rating"] is None
+    assert insert_query.inserted_rows[0]["urgency"] == "ROUTINE"
+
+
+def test_handle_book_normalizes_valid_severity_and_urgency(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(book, "validate_slot", lambda *args, **kwargs: None)
+    monkeypatch.setattr(book, "get_call_id", lambda payload: "call-789")
+    monkeypatch.setattr(book, "format_for_voice", lambda dt: "Wednesday, April 8 at 2 PM")
+
+    insert_query = MockQuery(data=[{"id": "appointment-3"}])
+    sb = MockSupabase(
+        tables={
+            "doctors": [MockQuery(data=[{"full_name": "Dr. Cruz"}])],
+            "appointments": [insert_query],
+        }
+    )
+    monkeypatch.setattr(book, "get_supabase", lambda: sb)
+
+    result = book._handle_book(
+        {
+            "patient_id": "patient-3",
+            "doctor_id": "doctor-3",
+            "start_at": "2026-04-08T19:00:00Z",
+            "end_at": "2026-04-08T20:00:00Z",
+            "severity_rating": "7",
+            "urgency": "urgent",
+        },
+        {},
+    )
+
+    assert result["status"] == "CONFIRMED"
+    assert insert_query.inserted_rows[0]["severity_rating"] == 7
+    assert insert_query.inserted_rows[0]["urgency"] == "URGENT"

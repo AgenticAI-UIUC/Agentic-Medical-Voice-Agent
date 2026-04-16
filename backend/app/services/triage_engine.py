@@ -75,12 +75,40 @@ _MENTAL_HEALTH_EMERGENCY_MESSAGE = (
 )
 
 
-def classify_emergency(symptoms: list[str]) -> tuple[bool, str | None, str | None]:
+def _coerce_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, (int, float)):
+        return str(value).strip()
+    return ""
+
+
+def _coerce_symptom_inputs(symptoms: Any) -> list[str]:
+    if symptoms is None:
+        return []
+    if isinstance(symptoms, (list, tuple, set)):
+        items = list(symptoms)
+    else:
+        items = [symptoms]
+
+    normalized: list[str] = []
+    for item in items:
+        text = _coerce_text(item)
+        if text:
+            normalized.append(text)
+    return normalized
+
+
+def classify_emergency(symptoms: list[str] | Any) -> tuple[bool, str | None, str | None]:
     """Check symptom text against red-flag patterns.
 
     Returns (is_emergency, matched_category, appropriate_message).
     """
-    combined = " ".join(symptoms).strip()
+    combined = " ".join(_coerce_symptom_inputs(symptoms)).strip()
     if not combined:
         return False, None, None
 
@@ -114,8 +142,9 @@ _SYMPTOM_ALIASES: dict[str, list[str]] = {
 }
 
 
-def _normalize_symptom_text(symptom: str) -> str:
-    normalized = re.sub(r"[^a-z0-9\s]", " ", symptom.lower())
+def _normalize_symptom_text(symptom: Any) -> str:
+    text = _coerce_text(symptom).lower()
+    normalized = re.sub(r"[^a-z0-9\s]", " ", text)
     normalized = re.sub(r"\s+", " ", normalized).strip()
     return normalized
 
@@ -128,7 +157,7 @@ def _singularize_symptom(symptom: str) -> str:
     return symptom
 
 
-def _symptom_query_terms(symptom: str) -> list[str]:
+def _symptom_query_terms(symptom: Any) -> list[str]:
     base = _normalize_symptom_text(symptom)
     if not base:
         return []
@@ -150,9 +179,13 @@ def _symptom_query_terms(symptom: str) -> list[str]:
     return ordered_terms
 
 
-def _classify_answer(answer: str) -> float:
+def _classify_answer(answer: Any) -> float:
     """Return +1 for affirmative, -1 for negative, 0 for neutral."""
-    words = set(answer.lower().split())
+    text = _coerce_text(answer).lower()
+    if not text:
+        return 0.0
+
+    words = set(text.split())
     affirm = len(words & _AFFIRMATIVE_WORDS)
     negate = len(words & _NEGATIVE_WORDS)
     if affirm > negate:
@@ -165,14 +198,17 @@ def _classify_answer(answer: str) -> float:
 def _apply_answer_adjustments(
     scores: dict[str, float],
     question_to_specialties: dict[str, list[str]],
-    answers: dict[str, str],
+    answers: dict[str, Any],
 ) -> None:
     """Adjust specialty scores in-place based on follow-up answers."""
     for question, response in answers.items():
+        question_text = _coerce_text(question)
+        if not question_text:
+            continue
         classification = _classify_answer(response)
         if classification == 0.0:
             continue
-        specialty_ids = question_to_specialties.get(question, [])
+        specialty_ids = question_to_specialties.get(question_text, [])
         for sid in specialty_ids:
             if sid not in scores:
                 continue
@@ -196,8 +232,8 @@ class TriageResult:
 
 
 def triage_symptoms(
-    symptoms: list[str],
-    answers: dict[str, str] | None = None,
+    symptoms: Any,
+    answers: dict[str, Any] | None = None,
     confidence_threshold: float = 0.6,
 ) -> TriageResult:
     """
@@ -211,14 +247,16 @@ def triage_symptoms(
             Affirmative answers boost the linked specialty; negative answers penalize it.
         confidence_threshold: Minimum confidence to consider specialty determined.
     """
-    if not symptoms:
+    symptom_texts = _coerce_symptom_inputs(symptoms)
+    answers = answers if isinstance(answers, dict) else {}
+    if not symptom_texts:
         return TriageResult(
             specialty_determined=False,
             follow_up_questions=["Could you describe your symptoms?"],
         )
 
     # --- Emergency guard: runs BEFORE any specialty matching ---
-    is_emergency, category, emsg = classify_emergency(symptoms)
+    is_emergency, category, emsg = classify_emergency(symptom_texts)
     if is_emergency:
         return TriageResult(
             specialty_determined=False,
@@ -233,7 +271,7 @@ def triage_symptoms(
     # Use ilike for case-insensitive partial matching
     all_rows: list[dict[str, Any]] = []
     seen_rows: set[tuple[str, str]] = set()
-    for symptom in symptoms:
+    for symptom in symptom_texts:
         for term in _symptom_query_terms(symptom):
             res = (
                 sb.table("symptom_specialty_map")
@@ -312,7 +350,7 @@ def triage_symptoms(
 
     # Not confident — gather follow-up questions from top candidates,
     # excluding questions that were already answered.
-    already_asked = set(answers.keys()) if answers else set()
+    already_asked = {_coerce_text(question) for question in answers.keys()} if answers else set()
     follow_ups: list[str] = []
     for sid, _ in ranked[:2]:
         for q in questions.get(sid, []):

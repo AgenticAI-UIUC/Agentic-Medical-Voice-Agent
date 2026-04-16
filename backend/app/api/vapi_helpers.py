@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 from typing import Any
 
 import httpx
@@ -49,6 +50,80 @@ def get_call_id(payload: dict[str, Any]) -> str | None:
 
 def normalize_phone(phone: str) -> str:
     return re.sub(r"\D", "", phone or "")
+
+
+def coerce_string(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    return ""
+
+
+def coerce_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "y", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "n", "off", ""}:
+            return False
+    return False
+
+
+def coerce_optional_int(
+    value: Any,
+    *,
+    minimum: int | None = None,
+    maximum: int | None = None,
+) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+
+    candidate: int
+    if isinstance(value, int):
+        candidate = value
+    elif isinstance(value, float):
+        if not value.is_integer():
+            return None
+        candidate = int(value)
+    elif isinstance(value, str):
+        normalized = value.strip()
+        if not re.fullmatch(r"[+-]?\d+", normalized):
+            return None
+        candidate = int(normalized)
+    else:
+        return None
+
+    if minimum is not None and candidate < minimum:
+        return None
+    if maximum is not None and candidate > maximum:
+        return None
+    return candidate
+
+
+def coerce_allowed_string(
+    value: Any,
+    allowed: set[str],
+    *,
+    default: str | None = None,
+) -> str | None:
+    normalized = coerce_string(value).upper()
+    if not normalized:
+        return default
+    return normalized if normalized in allowed else default
+
+
+def is_valid_uuid(value: Any) -> bool:
+    normalized = coerce_string(value)
+    if not normalized:
+        return False
+    try:
+        uuid.UUID(normalized)
+        return True
+    except (ValueError, AttributeError):
+        return False
 
 
 def vapi_tool_response(tool_call_id: str | None, result: dict[str, Any]) -> dict[str, Any]:

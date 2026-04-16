@@ -11,16 +11,56 @@ from app.services.triage_engine import triage_symptoms, get_all_specialties
 router = APIRouter()
 
 
-def _handle_triage(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
-    symptoms = args.get("symptoms") or []
-    if isinstance(symptoms, str):
-        symptoms = [
-            s.strip(" .")
-            for s in re.split(r",|\band\b", symptoms, flags=re.IGNORECASE)
-            if s.strip(" .")
-        ]
+def _coerce_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, (int, float)):
+        return str(value).strip()
+    return ""
 
-    answers = args.get("answers") or {}
+
+def _split_symptom_text(text: str) -> list[str]:
+    return [
+        s.strip(" .")
+        for s in re.split(r",|\band\b", text, flags=re.IGNORECASE)
+        if s.strip(" .")
+    ]
+
+
+def _normalize_symptoms(raw: Any) -> list[str]:
+    if raw is None:
+        return []
+
+    items = raw if isinstance(raw, (list, tuple, set)) else [raw]
+    symptoms: list[str] = []
+    for item in items:
+        text = _coerce_text(item)
+        if not text:
+            continue
+        symptoms.extend(_split_symptom_text(text))
+    return symptoms
+
+
+def _normalize_answers(raw: Any) -> dict[str, str]:
+    if not isinstance(raw, dict):
+        return {}
+
+    answers: dict[str, str] = {}
+    for question, response in raw.items():
+        question_text = _coerce_text(question)
+        response_text = _coerce_text(response)
+        if question_text and response_text:
+            answers[question_text] = response_text
+    return answers
+
+
+def _handle_triage(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    symptoms = _normalize_symptoms(args.get("symptoms"))
+    answers = _normalize_answers(args.get("answers"))
 
     result = triage_symptoms(symptoms, answers)
 
