@@ -20,14 +20,22 @@ from app.supabase import get_supabase
 
 
 NEXT_AVAILABLE_ALIASES = {
-    "next available day", "next available date", "next available",
-    "soonest", "earliest", "earliest available",
-    "as soon as possible", "asap", "soonest available",
+    "next available day",
+    "next available date",
+    "next available",
+    "soonest",
+    "earliest",
+    "earliest available",
+    "as soon as possible",
+    "asap",
+    "soonest available",
 }
 
 
 def _normalize_preference_text(value: str) -> str:
-    return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", (value or "").strip().lower())).strip()
+    return re.sub(
+        r"\s+", " ", re.sub(r"[^\w\s]", " ", (value or "").strip().lower())
+    ).strip()
 
 
 def is_next_available_request(preferred_day: str) -> bool:
@@ -47,7 +55,9 @@ def _fetch_availability(doctor_id: str) -> list[dict[str, Any]]:
     return getattr(res, "data", None) or []
 
 
-def _fetch_booked(doctor_id: str, start_utc: datetime, end_utc: datetime) -> set[datetime]:
+def _fetch_booked(
+    doctor_id: str, start_utc: datetime, end_utc: datetime
+) -> set[datetime]:
     """Return set of start_at datetimes that are already booked (non-cancelled)."""
     sb = get_supabase()
     res = (
@@ -67,7 +77,9 @@ def _fetch_booked(doctor_id: str, start_utc: datetime, end_utc: datetime) -> set
     return booked
 
 
-def _fetch_blocks(doctor_id: str, start_utc: datetime, end_utc: datetime) -> list[tuple[datetime, datetime]]:
+def _fetch_blocks(
+    doctor_id: str, start_utc: datetime, end_utc: datetime
+) -> list[tuple[datetime, datetime]]:
     """Return list of (block_start, block_end) in UTC."""
     sb = get_supabase()
     res = (
@@ -87,7 +99,9 @@ def _fetch_blocks(doctor_id: str, start_utc: datetime, end_utc: datetime) -> lis
     return blocks
 
 
-def _is_blocked(slot_start: datetime, slot_end: datetime, blocks: list[tuple[datetime, datetime]]) -> bool:
+def _is_blocked(
+    slot_start: datetime, slot_end: datetime, blocks: list[tuple[datetime, datetime]]
+) -> bool:
     """Check if a slot overlaps any block."""
     for bs, be in blocks:
         if slot_start < be and slot_end > bs:
@@ -109,12 +123,22 @@ def _generate_theoretical_slots(
         dow = row["day_of_week"]
         by_dow.setdefault(dow, []).append(row)
 
-    current = start_date_utc.date() if hasattr(start_date_utc, "date") else start_date_utc
+    current = (
+        start_date_utc.date() if hasattr(start_date_utc, "date") else start_date_utc
+    )
     end_d = end_date_utc.date() if hasattr(end_date_utc, "date") else end_date_utc
 
     # Iterate day by day
-    d = start_date_utc.astimezone(timezone.utc).date() if isinstance(start_date_utc, datetime) else start_date_utc
-    end_d = end_date_utc.astimezone(timezone.utc).date() if isinstance(end_date_utc, datetime) else end_date_utc
+    d = (
+        start_date_utc.astimezone(timezone.utc).date()
+        if isinstance(start_date_utc, datetime)
+        else start_date_utc
+    )
+    end_d = (
+        end_date_utc.astimezone(timezone.utc).date()
+        if isinstance(end_date_utc, datetime)
+        else end_date_utc
+    )
 
     day = d
     while day < end_d:
@@ -299,11 +323,13 @@ def find_available_slots(
             continue
         if not is_in_bucket(start, bucket):
             continue
-        available.append({
-            "start_at": start.isoformat(),
-            "end_at": end.isoformat(),
-            "label": format_for_voice(start),
-        })
+        available.append(
+            {
+                "start_at": start.isoformat(),
+                "end_at": end.isoformat(),
+                "label": format_for_voice(start),
+            }
+        )
         if len(available) >= max_slots:
             break
 
@@ -339,7 +365,9 @@ def find_slots_for_specialty(
         doctor_id = doctor["id"]
         doctor_name = doctor["full_name"]
 
-        slots = find_available_slots(doctor_id, preferred_day, preferred_time, max_slots=max_slots)
+        slots = find_available_slots(
+            doctor_id, preferred_day, preferred_time, max_slots=max_slots
+        )
         for s in slots:
             s["doctor_id"] = doctor_id
             s["doctor_name"] = doctor_name

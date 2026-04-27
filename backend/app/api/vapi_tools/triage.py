@@ -97,7 +97,9 @@ def _handle_triage(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
     }
 
 
-def _handle_list_specialties(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+def _handle_list_specialties(
+    args: dict[str, Any], payload: dict[str, Any]
+) -> dict[str, Any]:
     specialties = get_all_specialties()
     names = [s["name"] for s in specialties]
     has_general_practice = any(name == "General Practice" for name in names)

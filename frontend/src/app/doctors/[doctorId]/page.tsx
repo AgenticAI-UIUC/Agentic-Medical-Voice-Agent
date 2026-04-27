@@ -39,6 +39,59 @@ function hourLabel(hour: number) {
   return `${normalized} ${suffix}`;
 }
 
+function shouldShowSkeletonSlot(hour: number, dayIndex: number) {
+  return (hour + dayIndex) % 3 === 0 || (hour === 9 && dayIndex % 2 === 0);
+}
+
+function ScheduleTableSkeleton({ days }: { days: Date[] }) {
+  return (
+    <div
+      aria-busy="true"
+      aria-label="Loading doctor schedule"
+      className="overflow-x-auto rounded-xl border"
+    >
+      <div className="grid min-w-[980px] grid-cols-[90px_repeat(7,minmax(120px,1fr))]">
+        <div className="border-b bg-muted/40 p-3" />
+        {days.map((day) => (
+          <div
+            key={day.toISOString()}
+            className="border-b border-l bg-muted/40 p-3 text-center"
+          >
+            <p className="text-xs uppercase text-muted-foreground">
+              {day.toLocaleDateString(undefined, { weekday: 'short' })}
+            </p>
+            <p className="text-sm font-medium">
+              {day.toLocaleDateString('en-US', {
+                month: '2-digit',
+                day: '2-digit',
+                year: 'numeric',
+              })}
+            </p>
+          </div>
+        ))}
+
+        {GRID_HOURS.map((hour) => (
+          <Fragment key={hour}>
+            <div className="border-b p-2 text-right text-xs text-muted-foreground">
+              {hourLabel(hour)}
+            </div>
+            {days.map((day, dayIndex) => (
+              <div
+                key={`${day.toISOString()}-${hour}`}
+                className="min-h-12 border-b border-l p-1"
+              >
+                {shouldShowSkeletonSlot(hour, dayIndex) && (
+                  <div className="mb-1 h-9 w-full animate-pulse rounded-md bg-muted" />
+                )}
+              </div>
+            ))}
+          </Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function DoctorSchedulePage() {
   const router = useRouter();
   const params = useParams<{ doctorId: string }>();
@@ -140,9 +193,7 @@ export default function DoctorSchedulePage() {
         </div>
       </div>
 
-      {scheduleQuery.isPending && (
-        <p className="text-muted-foreground">Loading schedule...</p>
-      )}
+      {scheduleQuery.isPending && <ScheduleTableSkeleton days={days} />}
 
       {scheduleQuery.isSuccess && (
         <div className="overflow-x-auto rounded-xl border">

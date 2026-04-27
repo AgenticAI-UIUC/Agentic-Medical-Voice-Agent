@@ -43,9 +43,7 @@ export type ChangeMyPasswordInput = {
 export function getCurrentUser(token: string) {
   return apiFetch<UserPublic>('/api/v1/users/me', {
     method: 'GET',
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+    token,
   });
 }
 
@@ -62,18 +60,14 @@ export function getUsers(
 
   return apiFetch<UsersPublic>(path, {
     method: 'GET',
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+    token,
   });
 }
 
 export function createUser(token: string, input: UserCreateInput) {
   return apiFetch<UserPublic>('/api/v1/users/', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+    token,
     body: JSON.stringify({
       email: input.email,
       full_name: input.full_name ?? null,
@@ -91,9 +85,7 @@ export function updateUser(
 ) {
   return apiFetch<UserPublic>(`/api/v1/users/${userId}`, {
     method: 'PATCH',
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+    token,
     body: JSON.stringify(input),
   });
 }
@@ -101,9 +93,7 @@ export function updateUser(
 export function deleteUser(token: string, userId: string) {
   return apiFetch<{ message: string }>(`/api/v1/users/${userId}`, {
     method: 'DELETE',
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+    token,
   });
 }
 

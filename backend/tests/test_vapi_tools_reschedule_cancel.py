@@ -21,7 +21,9 @@ def test_handle_find_appointment_requires_patient_id() -> None:
     assert result["status"] == "INVALID"
 
 
-def test_handle_find_appointment_returns_found_match(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_handle_find_appointment_returns_found_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     appointments = [
         {
             "id": VALID_APPOINTMENT_ID,
@@ -38,7 +40,9 @@ def test_handle_find_appointment_returns_found_match(monkeypatch: pytest.MonkeyP
     sb = MockSupabase(tables={"appointments": [MockQuery(data=appointments)]})
     monkeypatch.setattr(reschedule, "get_supabase", lambda: sb)
     monkeypatch.setattr(reschedule, "now_utc", lambda: FIXED_NOW)
-    monkeypatch.setattr(reschedule, "_format_start", lambda start_at: "Friday, April 10 at 11 AM")
+    monkeypatch.setattr(
+        reschedule, "_format_start", lambda start_at: "Friday, April 10 at 11 AM"
+    )
 
     result = reschedule._handle_find_appointment(
         {"patient_id": VALID_PATIENT_ID, "doctor_name": "adams"},
@@ -68,7 +72,9 @@ def test_handle_find_appointment_supports_follow_up_lookup_with_completed_visit(
     ]
     sb = MockSupabase(tables={"appointments": [MockQuery(data=appointments)]})
     monkeypatch.setattr(reschedule, "get_supabase", lambda: sb)
-    monkeypatch.setattr(reschedule, "_format_start", lambda start_at: "Wednesday, April 1 at 11 AM")
+    monkeypatch.setattr(
+        reschedule, "_format_start", lambda start_at: "Wednesday, April 1 at 11 AM"
+    )
 
     result = reschedule._handle_find_appointment(
         {
@@ -116,7 +122,9 @@ def test_handle_find_appointment_treats_false_string_as_false_for_include_past(
     assert result["status"] == "NO_APPOINTMENTS"
 
 
-def test_handle_find_appointment_returns_multiple_choices(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_handle_find_appointment_returns_multiple_choices(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     appointments = [
         {
             "id": VALID_APPOINTMENT_ID,
@@ -144,7 +152,9 @@ def test_handle_find_appointment_returns_multiple_choices(monkeypatch: pytest.Mo
     sb = MockSupabase(tables={"appointments": [MockQuery(data=appointments)]})
     monkeypatch.setattr(reschedule, "get_supabase", lambda: sb)
     monkeypatch.setattr(reschedule, "now_utc", lambda: FIXED_NOW)
-    monkeypatch.setattr(reschedule, "_format_start", lambda start_at: f"slot-for-{start_at[:10]}")
+    monkeypatch.setattr(
+        reschedule, "_format_start", lambda start_at: f"slot-for-{start_at[:10]}"
+    )
 
     result = reschedule._handle_find_appointment({"patient_id": VALID_PATIENT_ID}, {})
 
@@ -179,7 +189,9 @@ def test_handle_reschedule_returns_no_slots(monkeypatch: pytest.MonkeyPatch) -> 
         }
     )
     monkeypatch.setattr(reschedule, "get_supabase", lambda: sb)
-    monkeypatch.setattr(reschedule, "find_slots_for_specialty", lambda *args, **kwargs: [])
+    monkeypatch.setattr(
+        reschedule, "find_slots_for_specialty", lambda *args, **kwargs: []
+    )
 
     result = reschedule._handle_reschedule(
         {
@@ -193,7 +205,9 @@ def test_handle_reschedule_returns_no_slots(monkeypatch: pytest.MonkeyPatch) -> 
     assert result["status"] == "NO_SLOTS"
 
 
-def test_handle_reschedule_normalizes_non_string_preferences(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_handle_reschedule_normalizes_non_string_preferences(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     sb = MockSupabase(
         tables={
             "appointments": [
@@ -221,7 +235,9 @@ def test_handle_reschedule_normalizes_non_string_preferences(monkeypatch: pytest
         return []
 
     monkeypatch.setattr(reschedule, "get_supabase", lambda: sb)
-    monkeypatch.setattr(reschedule, "find_slots_for_specialty", fake_find_slots_for_specialty)
+    monkeypatch.setattr(
+        reschedule, "find_slots_for_specialty", fake_find_slots_for_specialty
+    )
 
     result = reschedule._handle_reschedule(
         {
@@ -276,7 +292,9 @@ def test_handle_reschedule_relaxes_asap_time_bucket_when_no_exact_match(
         ]
 
     monkeypatch.setattr(reschedule, "get_supabase", lambda: sb)
-    monkeypatch.setattr(reschedule, "find_slots_for_specialty", fake_find_slots_for_specialty)
+    monkeypatch.setattr(
+        reschedule, "find_slots_for_specialty", fake_find_slots_for_specialty
+    )
 
     result = reschedule._handle_reschedule(
         {
@@ -343,7 +361,9 @@ def test_handle_reschedule_allows_missing_patient_id_when_appointment_is_known(
     assert result["patient_id"] == VALID_PATIENT_ID
 
 
-def test_handle_reschedule_falls_back_to_same_doctor(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_handle_reschedule_falls_back_to_same_doctor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     sb = MockSupabase(
         tables={
             "appointments": [
@@ -420,10 +440,14 @@ def test_handle_reschedule_finalize_rejects_end_before_start() -> None:
     }
 
 
-def test_handle_reschedule_finalize_sanitizes_optional_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_handle_reschedule_finalize_sanitizes_optional_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(reschedule, "validate_slot", lambda *args, **kwargs: None)
     monkeypatch.setattr(reschedule, "get_call_id", lambda payload: "call-999")
-    monkeypatch.setattr(reschedule, "format_for_voice", lambda dt: "Friday, April 10 at 11 AM")
+    monkeypatch.setattr(
+        reschedule, "format_for_voice", lambda dt: "Friday, April 10 at 11 AM"
+    )
 
     sb = MockSupabase(
         tables={
@@ -446,7 +470,9 @@ def test_handle_reschedule_finalize_sanitizes_optional_overrides(monkeypatch: py
         },
         rpcs={
             "reschedule_appointment": [
-                MockQuery(data={"status": "RESCHEDULED", "new_appointment_id": "new-appt"})
+                MockQuery(
+                    data={"status": "RESCHEDULED", "new_appointment_id": "new-appt"}
+                )
             ]
         },
     )
@@ -470,10 +496,14 @@ def test_handle_reschedule_finalize_sanitizes_optional_overrides(monkeypatch: py
     assert sb.rpc_calls[0][1]["p_reason"] == "follow up"
 
 
-def test_handle_reschedule_finalize_maps_rpc_not_active(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_handle_reschedule_finalize_maps_rpc_not_active(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(reschedule, "validate_slot", lambda *args, **kwargs: None)
     monkeypatch.setattr(reschedule, "get_call_id", lambda payload: "call-123")
-    monkeypatch.setattr(reschedule, "format_for_voice", lambda dt: "Friday, April 10 at 11 AM")
+    monkeypatch.setattr(
+        reschedule, "format_for_voice", lambda dt: "Friday, April 10 at 11 AM"
+    )
 
     sb = MockSupabase(
         tables={
@@ -515,10 +545,14 @@ def test_handle_reschedule_finalize_maps_rpc_not_active(monkeypatch: pytest.Monk
     }
 
 
-def test_handle_reschedule_finalize_returns_rescheduled_confirmation(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_handle_reschedule_finalize_returns_rescheduled_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(reschedule, "validate_slot", lambda *args, **kwargs: None)
     monkeypatch.setattr(reschedule, "get_call_id", lambda payload: "call-123")
-    monkeypatch.setattr(reschedule, "format_for_voice", lambda dt: "Friday, April 10 at 11 AM")
+    monkeypatch.setattr(
+        reschedule, "format_for_voice", lambda dt: "Friday, April 10 at 11 AM"
+    )
 
     sb = MockSupabase(
         tables={
@@ -541,7 +575,9 @@ def test_handle_reschedule_finalize_returns_rescheduled_confirmation(monkeypatch
         },
         rpcs={
             "reschedule_appointment": [
-                MockQuery(data={"status": "RESCHEDULED", "new_appointment_id": "new-appt"})
+                MockQuery(
+                    data={"status": "RESCHEDULED", "new_appointment_id": "new-appt"}
+                )
             ]
         },
     )
@@ -577,7 +613,9 @@ def test_handle_cancel_rejects_invalid_uuid() -> None:
     assert result["status"] == "INVALID"
 
 
-def test_handle_cancel_updates_appointment_status(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_handle_cancel_updates_appointment_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     select_query = MockQuery(
         data=[
             {

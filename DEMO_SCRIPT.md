@@ -94,11 +94,8 @@ Henry Long: Yes.
 If asked what the visit is for:
 Henry Long: I have a headache.
 
-If asked to describe the issue:
-Henry Long: It was quite bad, i couldn't sleep at night.
-
-If asked for severity:
-Henry Long: Four out of ten.
+If asked whether you have a specialist preference:
+Henry Long: I don't have a specialist preference.
 
 If asked whether the suggested specialty sounds right:
 Henry Long: Yes.

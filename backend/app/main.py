@@ -12,12 +12,12 @@ from app.api.vapi_webhook import router as vapi_webhook_router
 from app.config import settings
 
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print(f"Starting {settings.PROJECT_NAME} ({settings.ENVIRONMENT})")
     yield
     print("Shutting down")
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -40,6 +40,7 @@ app.include_router(doctors_router, prefix=settings.API_V1_STR)
 app.include_router(vapi_webhook_router, prefix=settings.API_V1_STR)
 app.include_router(vapi_tools_router, prefix=settings.API_V1_STR)
 app.include_router(admin_router, prefix=settings.API_V1_STR)
+
 
 @app.get("/health")
 def health():

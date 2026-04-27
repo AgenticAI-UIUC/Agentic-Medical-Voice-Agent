@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
-from app.api.vapi_helpers import handle_tool_calls
+from app.api.vapi_helpers import get_call_id, handle_tool_calls
 from app.supabase import get_supabase
 
 router = APIRouter()
@@ -12,6 +12,7 @@ router = APIRouter()
 
 def _is_valid_uuid(val: str) -> bool:
     import uuid
+
     try:
         uuid.UUID(val)
         return True
@@ -22,10 +23,16 @@ def _is_valid_uuid(val: str) -> bool:
 def _handle_cancel(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     appointment_id = args.get("appointment_id")
     if not appointment_id:
-        return {"status": "INVALID", "message": "I need to know which appointment to cancel."}
+        return {
+            "status": "INVALID",
+            "message": "I need to know which appointment to cancel.",
+        }
 
     if not _is_valid_uuid(appointment_id):
-        return {"status": "INVALID", "message": "The appointment ID is not valid. Please try finding the appointment again."}
+        return {
+            "status": "INVALID",
+            "message": "The appointment ID is not valid. Please try finding the appointment again.",
+        }
 
     sb = get_supabase()
 
@@ -43,10 +50,17 @@ def _handle_cancel(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
 
     appt = data[0]
     if appt["status"] != "CONFIRMED":
-        return {"status": "INVALID", "message": "That appointment is already cancelled or completed."}
+        return {
+            "status": "INVALID",
+            "message": "That appointment is already cancelled or completed.",
+        }
 
     # Cancel it
-    sb.table("appointments").update({"status": "CANCELLED"}).eq("id", appointment_id).execute()
+    update_row = {"status": "CANCELLED"}
+    vapi_call_id = get_call_id(payload)
+    if vapi_call_id:
+        update_row["vapi_call_id"] = vapi_call_id
+    sb.table("appointments").update(update_row).eq("id", appointment_id).execute()
 
     doctor_name = appt.get("doctors", {}).get("full_name", "your doctor")
     return {

@@ -25,6 +25,10 @@ class TokenResponse(BaseModel):
     expires_in: int | None = None
 
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
 async def _read_login_form(request: Request) -> tuple[str, str]:
     body = (await request.body()).decode("utf-8")
     form = parse_qs(body, keep_blank_values=True)
@@ -36,6 +40,38 @@ async def _read_login_form(request: Request) -> tuple[str, str]:
             detail="Email and password are required",
         )
     return username, password
+
+
+def _token_response_from_session(session: object) -> TokenResponse:
+    access_token = getattr(session, "access_token", None)
+    if not access_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not refresh session",
+        )
+
+    return TokenResponse(
+        access_token=access_token,
+        token_type=getattr(session, "token_type", "bearer") or "bearer",
+        refresh_token=getattr(session, "refresh_token", None),
+        expires_in=getattr(session, "expires_in", None),
+    )
+
+
+def _reject_inactive_session_user(session: object, user: object | None) -> None:
+    if user is None or user_to_public(user).is_active:
+        return
+
+    access_token = getattr(session, "access_token", None)
+    if access_token:
+        try:
+            get_supabase().auth.admin.sign_out(access_token)
+        except AuthError:
+            pass
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Account is pending admin approval",
+    )
 
 
 @router.post("/access-token", response_model=TokenResponse)
@@ -61,23 +97,44 @@ async def login_access_token(request: Request) -> TokenResponse:
             detail="Incorrect email or password",
         )
 
-    user = getattr(response, "user", None) or getattr(session, "user", None)
-    if user is not None and not user_to_public(user).is_active:
-        try:
-            get_supabase().auth.admin.sign_out(session.access_token)
-        except AuthError:
-            pass
+    _reject_inactive_session_user(
+        session,
+        getattr(response, "user", None) or getattr(session, "user", None),
+    )
+
+    return _token_response_from_session(session)
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh_access_token(request: RefreshTokenRequest) -> TokenResponse:
+    refresh_token = request.refresh_token.strip()
+    if not refresh_token:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is pending admin approval",
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Refresh token is required",
         )
 
-    return TokenResponse(
-        access_token=session.access_token,
-        token_type=getattr(session, "token_type", "bearer") or "bearer",
-        refresh_token=getattr(session, "refresh_token", None),
-        expires_in=getattr(session, "expires_in", None),
+    try:
+        response = get_supabase().auth.refresh_session(refresh_token)
+    except AuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not refresh session",
+        ) from exc
+
+    session = getattr(response, "session", None)
+    if session is None or not getattr(session, "access_token", None):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not refresh session",
+        )
+
+    _reject_inactive_session_user(
+        session,
+        getattr(response, "user", None) or getattr(session, "user", None),
     )
+
+    return _token_response_from_session(session)
 
 
 @router.post("/logout")

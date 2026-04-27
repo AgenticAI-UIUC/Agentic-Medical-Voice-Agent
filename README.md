@@ -51,7 +51,6 @@ Patient: "I'd like to make an appointment"
   ▼
 Symptom Collection
   │  "Can you describe your symptoms?"
-  │  "On a scale of 1-10, how severe?"
   │  "Do you have a specialist preference?"
   │
   ▼
@@ -457,7 +456,7 @@ doctor_specialties ──▶ doctors ◀── doctor_availability
 | **doctor_availability**| Weekly schedule templates (day, start/end time, slot duration)  |
 | **doctor_blocks**      | One-off unavailability periods (conferences, time off)         |
 | **patients**           | Patient records identified by 9-digit UIN                      |
-| **appointments**       | Booked appointments with triage data, severity, and follow-up links |
+| **appointments**       | Booked appointments with triage data and follow-up links |
 | **conversations**      | Vapi call transcripts (JSON) and AI-generated summaries        |
 
 See `backend/schema.sql` for the full schema.
@@ -664,14 +663,6 @@ Book a confirmed appointment for a patient with a specific doctor and time slot.
     "symptoms": {
       "type": "string",
       "description": "Patient's symptoms (optional)"
-    },
-    "severity_description": {
-      "type": "string",
-      "description": "Description of symptom severity (optional)"
-    },
-    "severity_rating": {
-      "type": "number",
-      "description": "Numeric severity rating 1-10 (optional)"
     },
     "urgency": {
       "type": "string",

@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from supabase_auth.errors import AuthError
 
 from app.api import deps, login, users
 
@@ -63,6 +64,7 @@ class FakeAuth:
         self.current_user = current_user
         self.admin_users = [current_user]
         self.last_credentials: dict[str, str] | None = None
+        self.last_refresh_token: str | None = None
         self.admin = FakeAdminAuth(self)
 
     def sign_in_with_password(self, credentials: dict[str, str]):
@@ -75,7 +77,22 @@ class FakeAuth:
                 token_type="bearer",
                 expires_in=3600,
                 user=self.current_user,
-            )
+            ),
+        )
+
+    def refresh_session(self, refresh_token: str):
+        self.last_refresh_token = refresh_token
+        if refresh_token != "refresh-token":
+            raise AuthError("Invalid refresh token", None)
+        return SimpleNamespace(
+            user=self.current_user,
+            session=SimpleNamespace(
+                access_token="refreshed-access-token",
+                refresh_token="rotated-refresh-token",
+                token_type="bearer",
+                expires_in=3600,
+                user=self.current_user,
+            ),
         )
 
     def get_user(self, jwt: str):
@@ -108,6 +125,7 @@ def test_login_access_token_uses_supabase_password_auth(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json()["access_token"] == "access-token"
+    assert response.json()["refresh_token"] == "refresh-token"
     assert sb.auth.last_credentials == {
         "email": "staff@example.com",
         "password": "password123",
@@ -127,6 +145,51 @@ def test_login_rejects_inactive_user(monkeypatch) -> None:
     assert response.status_code == 403
     assert response.json() == {"detail": "Account is pending admin approval"}
     assert sb.auth.admin.signed_out_token == "access-token"
+
+
+def test_refresh_access_token_uses_supabase_refresh_token(monkeypatch) -> None:
+    sb = FakeSupabase(_make_user())
+    monkeypatch.setattr(login, "get_supabase", lambda: sb)
+
+    with _client_for(login.router) as client:
+        response = client.post(
+            "/api/v1/login/refresh",
+            json={"refresh_token": "refresh-token"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["access_token"] == "refreshed-access-token"
+    assert response.json()["refresh_token"] == "rotated-refresh-token"
+    assert sb.auth.last_refresh_token == "refresh-token"
+
+
+def test_refresh_access_token_rejects_invalid_refresh_token(monkeypatch) -> None:
+    sb = FakeSupabase(_make_user())
+    monkeypatch.setattr(login, "get_supabase", lambda: sb)
+
+    with _client_for(login.router) as client:
+        response = client.post(
+            "/api/v1/login/refresh",
+            json={"refresh_token": "invalid-refresh-token"},
+        )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Could not refresh session"}
+
+
+def test_refresh_rejects_inactive_user(monkeypatch) -> None:
+    sb = FakeSupabase(_make_user(is_active=False))
+    monkeypatch.setattr(login, "get_supabase", lambda: sb)
+
+    with _client_for(login.router) as client:
+        response = client.post(
+            "/api/v1/login/refresh",
+            json={"refresh_token": "refresh-token"},
+        )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Account is pending admin approval"}
+    assert sb.auth.admin.signed_out_token == "refreshed-access-token"
 
 
 def test_read_me_returns_supabase_user_metadata(monkeypatch) -> None:

@@ -50,7 +50,7 @@ The intended patient experience is: call the clinic, state what you need, confir
 
 1. Determine whether the caller is new or returning.
 2. Register or identify the patient using a 9-digit UIN while preserving the caller's original booking intent. If they are truly new and were just registered, continue straight into symptom collection rather than asking about follow-up care.
-3. Collect symptoms and severity.
+3. Collect symptoms and any specialist preference.
 4. Run triage to determine a specialty.
 5. Ask for scheduling preferences such as preferred day and morning vs afternoon.
 6. Compute live availability.
@@ -483,7 +483,6 @@ It stores:
 - follow-up relationship to a prior appointment
 - start and end timestamps
 - reason and symptoms
-- severity information
 - urgency
 - status
 - Vapi call id

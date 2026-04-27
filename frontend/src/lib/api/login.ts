@@ -3,6 +3,8 @@ import { apiFetch } from './client';
 export type TokenResponse = {
   access_token: string;
   token_type: string;
+  refresh_token?: string | null;
+  expires_in?: number | null;
 };
 
 export async function loginAccessToken(input: {
@@ -28,5 +30,6 @@ export async function logoutAccessToken(
   return apiFetch<{ message: string }>('/api/v1/login/logout', {
     method: 'POST',
     token,
+    skipAuthRefresh: true,
   });
 }

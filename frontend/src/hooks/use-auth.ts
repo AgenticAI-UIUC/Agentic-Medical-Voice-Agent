@@ -12,9 +12,9 @@ import {
 } from '@/lib/api/users';
 
 import {
-  clearAccessToken,
+  clearAuthTokens,
   getAccessToken,
-  setAccessToken,
+  setAuthTokens,
 } from '@/lib/api/auth';
 
 export function useLoginMutation() {
@@ -23,7 +23,7 @@ export function useLoginMutation() {
   return useMutation({
     mutationFn: loginAccessToken,
     onSuccess: async (data) => {
-      setAccessToken(data.access_token);
+      setAuthTokens(data.access_token, data.refresh_token ?? null);
       try {
         const user = await getCurrentUser(data.access_token);
         queryClient.setQueryData(['auth', 'me'], user);
@@ -49,7 +49,7 @@ export function useCurrentUserQuery(options?: { enabled?: boolean }) {
 
 export async function logout() {
   const token = getAccessToken();
-  clearAccessToken();
+  clearAuthTokens();
   if (!token) return;
 
   try {

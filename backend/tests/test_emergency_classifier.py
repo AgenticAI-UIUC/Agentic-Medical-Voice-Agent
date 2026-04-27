@@ -9,6 +9,7 @@ from app.services.triage_engine import classify_emergency
 
 # --- Should trigger emergency ---
 
+
 @pytest.mark.parametrize(
     "symptoms, expected_category",
     [
@@ -32,7 +33,10 @@ from app.services.triage_engine import classify_emergency
         (["uncontrollable bleeding"], "severe bleeding or trauma"),
         # Consciousness
         (["unconscious"], "loss of consciousness or prolonged seizure"),
-        (["unresponsive and not waking up"], "loss of consciousness or prolonged seizure"),
+        (
+            ["unresponsive and not waking up"],
+            "loss of consciousness or prolonged seizure",
+        ),
         # Anaphylaxis
         (["anaphylaxis"], "possible anaphylaxis"),
         (["throat closing up"], "possible anaphylaxis"),
@@ -66,6 +70,7 @@ def test_general_emergency_gives_911_message() -> None:
 
 
 # --- Should NOT trigger emergency ---
+
 
 @pytest.mark.parametrize(
     "symptoms",

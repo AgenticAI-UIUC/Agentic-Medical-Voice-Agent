@@ -40,6 +40,12 @@ CREATE TABLE public.conversations (
   call_id text NOT NULL UNIQUE,
   transcript jsonb NOT NULL DEFAULT '[]'::jsonb,
   summary text,
+  call_status text NOT NULL DEFAULT 'unknown'::text,
+  outcome text,
+  ended_reason text,
+  started_at timestamp with time zone,
+  ended_at timestamp with time zone,
+  last_event_at timestamp with time zone NOT NULL DEFAULT now(),
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT conversations_pkey PRIMARY KEY (id),
   CONSTRAINT conversations_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES public.patients(id)

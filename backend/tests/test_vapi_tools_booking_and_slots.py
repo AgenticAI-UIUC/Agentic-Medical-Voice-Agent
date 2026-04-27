@@ -16,16 +16,22 @@ def test_handle_find_slots_requires_specialty_or_doctor() -> None:
     }
 
 
-def test_handle_find_slots_returns_doctor_specific_no_slots(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_handle_find_slots_returns_doctor_specific_no_slots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(find_slots, "find_available_slots", lambda *args, **kwargs: [])
 
-    result = find_slots._handle_find_slots({"doctor_id": "doc-1", "preferred_day": "today"}, {})
+    result = find_slots._handle_find_slots(
+        {"doctor_id": "doc-1", "preferred_day": "today"}, {}
+    )
 
     assert result["status"] == "NO_SLOTS"
     assert result["slots"] == []
 
 
-def test_handle_find_slots_normalizes_non_string_preferences(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_handle_find_slots_normalizes_non_string_preferences(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[tuple[str, str, str]] = []
 
     def fake_find_slots_for_specialty(
@@ -36,7 +42,9 @@ def test_handle_find_slots_normalizes_non_string_preferences(monkeypatch: pytest
         calls.append((specialty_id, preferred_day, preferred_time))
         return []
 
-    monkeypatch.setattr(find_slots, "find_slots_for_specialty", fake_find_slots_for_specialty)
+    monkeypatch.setattr(
+        find_slots, "find_slots_for_specialty", fake_find_slots_for_specialty
+    )
 
     result = find_slots._handle_find_slots(
         {
@@ -51,7 +59,9 @@ def test_handle_find_slots_normalizes_non_string_preferences(monkeypatch: pytest
     assert calls == [("derm", "", "")]
 
 
-def test_handle_find_slots_formats_specialty_results(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_handle_find_slots_formats_specialty_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         find_slots,
         "find_slots_for_specialty",
@@ -61,13 +71,20 @@ def test_handle_find_slots_formats_specialty_results(monkeypatch: pytest.MonkeyP
         ],
     )
 
-    result = find_slots._handle_find_slots({"specialty_id": "derm", "preferred_day": "today"}, {})
+    result = find_slots._handle_find_slots(
+        {"specialty_id": "derm", "preferred_day": "today"}, {}
+    )
 
     assert result["status"] == "OK"
-    assert "Monday at 9 AM with Dr. Alpha or Monday at 10 AM with Dr. Beta" in result["message"]
+    assert (
+        "Monday at 9 AM with Dr. Alpha or Monday at 10 AM with Dr. Beta"
+        in result["message"]
+    )
 
 
-def test_handle_find_slots_formats_same_doctor_results_once(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_handle_find_slots_formats_same_doctor_results_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         find_slots,
         "find_slots_for_specialty",
@@ -78,10 +95,15 @@ def test_handle_find_slots_formats_same_doctor_results_once(monkeypatch: pytest.
         ],
     )
 
-    result = find_slots._handle_find_slots({"specialty_id": "neuro", "preferred_day": "today"}, {})
+    result = find_slots._handle_find_slots(
+        {"specialty_id": "neuro", "preferred_day": "today"}, {}
+    )
 
     assert result["status"] == "OK"
-    assert "with Dr. Priya Patel on Wednesday, April 8 at 2 PM, 3 PM or 4 PM" in result["message"]
+    assert (
+        "with Dr. Priya Patel on Wednesday, April 8 at 2 PM, 3 PM or 4 PM"
+        in result["message"]
+    )
     assert result["message"].count("Dr. Priya Patel") == 1
     assert result["message"].count("Wednesday, April 8") == 1
 
@@ -104,7 +126,9 @@ def test_handle_find_slots_relaxes_asap_time_bucket_when_no_exact_match(
             {"label": "Thursday, April 9 at 2 PM", "doctor_name": "Dr. Patel"},
         ]
 
-    monkeypatch.setattr(find_slots, "find_slots_for_specialty", fake_find_slots_for_specialty)
+    monkeypatch.setattr(
+        find_slots, "find_slots_for_specialty", fake_find_slots_for_specialty
+    )
 
     result = find_slots._handle_find_slots(
         {
@@ -121,11 +145,16 @@ def test_handle_find_slots_relaxes_asap_time_bucket_when_no_exact_match(
         ("neuro", "as soon as possible, please", "any"),
     ]
     assert "don't see any morning openings as soon as possible" in result["message"]
-    assert "with Dr. Patel: Wednesday, April 8 at 1 PM or Thursday, April 9 at 2 PM" in result["message"]
+    assert (
+        "with Dr. Patel: Wednesday, April 8 at 1 PM or Thursday, April 9 at 2 PM"
+        in result["message"]
+    )
     assert result["message"].count("Dr. Patel") == 1
 
 
-def test_handle_find_slots_relaxed_message_collapses_same_day_slots(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_handle_find_slots_relaxed_message_collapses_same_day_slots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     def fake_find_slots_for_specialty(
         specialty_id: str,
         preferred_day: str,
@@ -139,7 +168,9 @@ def test_handle_find_slots_relaxed_message_collapses_same_day_slots(monkeypatch:
             {"label": "Wednesday, April 8 at 4 PM", "doctor_name": "Dr. Patel"},
         ]
 
-    monkeypatch.setattr(find_slots, "find_slots_for_specialty", fake_find_slots_for_specialty)
+    monkeypatch.setattr(
+        find_slots, "find_slots_for_specialty", fake_find_slots_for_specialty
+    )
 
     result = find_slots._handle_find_slots(
         {
@@ -151,7 +182,10 @@ def test_handle_find_slots_relaxed_message_collapses_same_day_slots(monkeypatch:
     )
 
     assert result["status"] == "OK"
-    assert "with Dr. Patel on Wednesday, April 8 at 2 PM, 3 PM or 4 PM" in result["message"]
+    assert (
+        "with Dr. Patel on Wednesday, April 8 at 2 PM, 3 PM or 4 PM"
+        in result["message"]
+    )
     assert result["message"].count("Wednesday, April 8") == 1
 
 
@@ -179,15 +213,21 @@ def test_handle_find_slots_relaxed_message_collapses_same_day_slots(monkeypatch:
         ),
     ],
 )
-def test_handle_book_rejects_invalid_inputs(args: dict[str, str], expected_message: str) -> None:
+def test_handle_book_rejects_invalid_inputs(
+    args: dict[str, str], expected_message: str
+) -> None:
     result = book._handle_book(args, {})
 
     assert result["status"] == "INVALID"
     assert result["message"] == expected_message
 
 
-def test_handle_book_surfaces_slot_validation_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(book, "validate_slot", lambda *args, **kwargs: "That slot is already booked.")
+def test_handle_book_surfaces_slot_validation_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        book, "validate_slot", lambda *args, **kwargs: "That slot is already booked."
+    )
 
     result = book._handle_book(
         {
@@ -202,7 +242,9 @@ def test_handle_book_surfaces_slot_validation_error(monkeypatch: pytest.MonkeyPa
     assert result == {"status": "INVALID", "message": "That slot is already booked."}
 
 
-def test_handle_book_returns_taken_when_db_constraint_fires(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_handle_book_returns_taken_when_db_constraint_fires(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(book, "validate_slot", lambda *args, **kwargs: None)
     monkeypatch.setattr(book, "get_call_id", lambda payload: "call-123")
     monkeypatch.setattr(book, "format_for_voice", lambda dt: "Monday, April 6 at 11 AM")
@@ -229,7 +271,9 @@ def test_handle_book_returns_taken_when_db_constraint_fires(monkeypatch: pytest.
     assert "just booked" in result["message"]
 
 
-def test_handle_book_inserts_appointment_and_returns_confirmation(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_handle_book_inserts_appointment_and_returns_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(book, "validate_slot", lambda *args, **kwargs: None)
     monkeypatch.setattr(book, "get_call_id", lambda payload: "call-123")
     monkeypatch.setattr(book, "format_for_voice", lambda dt: "Monday, April 6 at 11 AM")
@@ -266,13 +310,17 @@ def test_handle_book_inserts_appointment_and_returns_confirmation(monkeypatch: p
     assert insert_query.inserted_rows[0]["vapi_call_id"] == "call-123"
     assert insert_query.inserted_rows[0]["reason"] == "follow up"
     assert insert_query.inserted_rows[0]["symptoms"] == "rash"
-    assert insert_query.inserted_rows[0]["severity_description"] == "itchy"
+    assert insert_query.inserted_rows[0]["severity_description"] is None
 
 
-def test_handle_book_normalizes_optional_fields_and_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_handle_book_normalizes_optional_fields_and_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(book, "validate_slot", lambda *args, **kwargs: None)
     monkeypatch.setattr(book, "get_call_id", lambda payload: "call-456")
-    monkeypatch.setattr(book, "format_for_voice", lambda dt: "Tuesday, April 7 at 10 AM")
+    monkeypatch.setattr(
+        book, "format_for_voice", lambda dt: "Tuesday, April 7 at 10 AM"
+    )
 
     insert_query = MockQuery(data=[{"id": "appointment-2"}])
     sb = MockSupabase(
@@ -310,10 +358,14 @@ def test_handle_book_normalizes_optional_fields_and_defaults(monkeypatch: pytest
     assert insert_query.inserted_rows[0]["urgency"] == "ROUTINE"
 
 
-def test_handle_book_normalizes_valid_severity_and_urgency(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_handle_book_ignores_legacy_severity_rating_and_normalizes_urgency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(book, "validate_slot", lambda *args, **kwargs: None)
     monkeypatch.setattr(book, "get_call_id", lambda payload: "call-789")
-    monkeypatch.setattr(book, "format_for_voice", lambda dt: "Wednesday, April 8 at 2 PM")
+    monkeypatch.setattr(
+        book, "format_for_voice", lambda dt: "Wednesday, April 8 at 2 PM"
+    )
 
     insert_query = MockQuery(data=[{"id": "appointment-3"}])
     sb = MockSupabase(
@@ -330,12 +382,12 @@ def test_handle_book_normalizes_valid_severity_and_urgency(monkeypatch: pytest.M
             "doctor_id": "doctor-3",
             "start_at": "2026-04-08T19:00:00Z",
             "end_at": "2026-04-08T20:00:00Z",
-            "severity_rating": "7",
+            "severity_rating": "very bad",
             "urgency": "urgent",
         },
         {},
     )
 
     assert result["status"] == "CONFIRMED"
-    assert insert_query.inserted_rows[0]["severity_rating"] == 7
+    assert insert_query.inserted_rows[0]["severity_rating"] is None
     assert insert_query.inserted_rows[0]["urgency"] == "URGENT"

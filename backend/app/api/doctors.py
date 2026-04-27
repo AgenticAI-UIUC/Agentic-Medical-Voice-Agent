@@ -191,8 +191,7 @@ def get_doctor_schedule(
     ]
 
     slots_by_day: dict[str, list[DoctorSlot]] = {
-        (start_date + timedelta(days=offset)).isoformat(): []
-        for offset in range(days)
+        (start_date + timedelta(days=offset)).isoformat(): [] for offset in range(days)
     }
     for slot_start, slot_end in _generate_theoretical_slots(
         availability,

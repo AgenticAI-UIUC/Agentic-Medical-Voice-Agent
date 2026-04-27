@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import httpx
+import pytest
 
 from app.api import vapi_helpers
 
@@ -39,6 +40,31 @@ def test_get_call_id_and_normalize_phone() -> None:
     assert vapi_helpers.normalize_phone("(217) 555-1212") == "2175551212"
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("7", 7),
+        ("seven", 7),
+        ("I would say 6 out of 10", 6),
+        ("mild", 2),
+        ("not too bad", 5),
+        ("moderate", 5),
+        ("manageable", 5),
+        ("very bad", 8),
+        ("really bad", 8),
+        ("the worst I've felt", 10),
+        ("unbearable", 10),
+        ("unclear", None),
+        ("11", None),
+    ],
+)
+def test_coerce_severity_rating_accepts_numeric_and_qualitative_answers(
+    value: str,
+    expected: int | None,
+) -> None:
+    assert vapi_helpers.coerce_severity_rating(value) == expected
+
+
 def test_handle_tool_calls_wraps_results_and_errors() -> None:
     payload = {
         "toolCalls": [
@@ -57,7 +83,10 @@ def test_handle_tool_calls_wraps_results_and_errors() -> None:
     assert response["results"][0]["toolCallId"] == "ok"
     assert json.loads(response["results"][0]["result"]) == {"status": "OK", "value": 1}
     assert response["results"][1]["toolCallId"] == "bad"
-    assert json.loads(response["results"][1]["result"]) == {"status": "ERROR", "message": "boom"}
+    assert json.loads(response["results"][1]["result"]) == {
+        "status": "ERROR",
+        "message": "boom",
+    }
 
 
 def test_handle_tool_calls_maps_timeouts_to_friendly_error() -> None:
