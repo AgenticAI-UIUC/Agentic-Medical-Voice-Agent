@@ -62,6 +62,15 @@ def _format_slot_options(slots: list[dict[str, Any]], include_doctor: bool) -> s
     return _join_labels(detailed_labels)
 
 
+def _attach_specialty_id(
+    slots: list[dict[str, Any]],
+    specialty_id: str,
+) -> list[dict[str, Any]]:
+    for slot in slots:
+        slot.setdefault("specialty_id", specialty_id)
+    return slots
+
+
 def _relaxed_message(
     preferred_time: str, slots: list[dict[str, Any]], include_doctor: bool
 ) -> str:
@@ -114,9 +123,15 @@ def _handle_find_slots(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
             "slots": [],
         }
 
-    slots = find_slots_for_specialty(specialty_id, preferred_day, preferred_time)
+    slots = _attach_specialty_id(
+        find_slots_for_specialty(specialty_id, preferred_day, preferred_time),
+        specialty_id,
+    )
     if not slots and _should_retry_with_any(preferred_day, preferred_time):
-        slots = find_slots_for_specialty(specialty_id, preferred_day, "any")
+        slots = _attach_specialty_id(
+            find_slots_for_specialty(specialty_id, preferred_day, "any"),
+            specialty_id,
+        )
         if slots:
             return {
                 "status": "OK",

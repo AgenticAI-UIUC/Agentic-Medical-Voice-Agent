@@ -76,6 +76,8 @@ def test_handle_find_slots_formats_specialty_results(
     )
 
     assert result["status"] == "OK"
+    assert result["slots"][0]["specialty_id"] == "derm"
+    assert result["slots"][1]["specialty_id"] == "derm"
     assert (
         "Monday at 9 AM with Dr. Alpha or Monday at 10 AM with Dr. Beta"
         in result["message"]

@@ -4,6 +4,11 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.config import settings
+from app.services.rag_retriever import (
+    RetrievedMedicalKnowledge,
+    retrieve_medical_knowledge,
+)
 from app.supabase import get_supabase
 
 # ---------------------------------------------------------------------------
@@ -18,6 +23,9 @@ _RED_FLAG_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (
         re.compile(
             r"chest\s+pain|chest\s+tight|chest\s+pressure|crushing\s+chest"
+            r"|elephant(\s+is)?\s+(on|sitting\s+on)\s+(my\s+)?chest"
+            r"|heavy\s+(weight|pressure)\s+(on|in)\s+(my\s+)?chest"
+            r"|squeez\w*\s+(in\s+)?(my\s+)?chest"
             r"|heart\s+attack|cardiac\s+arrest",
             re.IGNORECASE,
         ),
@@ -187,6 +195,40 @@ _NEGATIVE_WORDS = frozenset(
 # How much a single affirmative/negative answer shifts a specialty's score.
 _ANSWER_BOOST = 1.5
 _ANSWER_PENALTY = 0.6  # multiplicative – shrinks rather than removes
+_SEMANTIC_SOURCE_QUESTION_LIMIT = 3
+_ANSWER_KEYWORD_STOPWORDS = frozenset(
+    {
+        "about",
+        "after",
+        "also",
+        "and",
+        "any",
+        "are",
+        "both",
+        "can",
+        "did",
+        "does",
+        "for",
+        "from",
+        "had",
+        "has",
+        "have",
+        "how",
+        "is",
+        "it",
+        "its",
+        "long",
+        "more",
+        "or",
+        "the",
+        "their",
+        "them",
+        "they",
+        "this",
+        "you",
+        "your",
+    }
+)
 
 _SYMPTOM_ALIASES: dict[str, list[str]] = {
     "migraine": ["headache"],
@@ -249,6 +291,31 @@ def _classify_answer(answer: Any) -> float:
     return 0.0
 
 
+def _answer_keywords(text: Any) -> set[str]:
+    normalized = _normalize_symptom_text(text)
+    if not normalized:
+        return set()
+    return {
+        token
+        for token in normalized.split()
+        if len(token) > 2 and token not in _ANSWER_KEYWORD_STOPWORDS
+    }
+
+
+def _classify_answer_for_question(question: Any, answer: Any) -> float:
+    classification = _classify_answer(answer)
+    if classification != 0.0:
+        return classification
+
+    # Follow-up answers are often not yes/no in voice calls. If the patient
+    # answers with terms from the question ("vision changes", "start suddenly"),
+    # treat that as confirming the specialty-specific follow-up.
+    if _answer_keywords(question) & _answer_keywords(answer):
+        return 1.0
+
+    return 0.0
+
+
 def _apply_answer_adjustments(
     scores: dict[str, float],
     question_to_specialties: dict[str, list[str]],
@@ -259,7 +326,7 @@ def _apply_answer_adjustments(
         question_text = _coerce_text(question)
         if not question_text:
             continue
-        classification = _classify_answer(response)
+        classification = _classify_answer_for_question(question_text, response)
         if classification == 0.0:
             continue
         specialty_ids = question_to_specialties.get(question_text, [])
@@ -270,6 +337,65 @@ def _apply_answer_adjustments(
                 scores[sid] = scores[sid] + _ANSWER_BOOST
             else:
                 scores[sid] = scores[sid] * _ANSWER_PENALTY
+
+
+def _semantic_search_enabled(explicit: bool | None = None) -> bool:
+    if explicit is not None:
+        return explicit
+    return settings.TRIAGE_SEMANTIC_SEARCH_ENABLED
+
+
+def _build_semantic_query(symptom_texts: list[str], description: str | None) -> str:
+    description_text = _coerce_text(description)
+    if description_text:
+        return description_text
+    return ". ".join(symptom_texts)
+
+
+def _add_unique_questions(
+    questions: dict[str, list[str]],
+    specialty_id: str,
+    new_questions: Any,
+) -> None:
+    if not isinstance(new_questions, list):
+        return
+
+    existing = questions.setdefault(specialty_id, [])
+    for question in new_questions[:_SEMANTIC_SOURCE_QUESTION_LIMIT]:
+        question_text = _coerce_text(question)
+        if question_text and question_text not in existing:
+            existing.append(question_text)
+
+
+def _apply_semantic_matches(
+    scores: dict[str, float],
+    names: dict[str, str],
+    questions: dict[str, list[str]],
+    chunks: list[RetrievedMedicalKnowledge],
+) -> None:
+    """Fold vector-search matches into the same specialty score map."""
+    for chunk in chunks:
+        metadata = chunk.get("metadata", {})
+        specialty_id = _coerce_text(metadata.get("specialty_id"))
+        if not specialty_id:
+            continue
+
+        similarity = float(chunk.get("similarity") or 0.0)
+        if similarity <= 0.0:
+            continue
+
+        semantic_score = similarity * settings.TRIAGE_SEMANTIC_SCORE_SCALE
+        scores[specialty_id] = scores.get(specialty_id, 0.0) + semantic_score
+
+        specialty_name = _coerce_text(metadata.get("specialty_name"))
+        if specialty_name and specialty_id not in names:
+            names[specialty_id] = specialty_name
+
+        _add_unique_questions(
+            questions,
+            specialty_id,
+            metadata.get("follow_up_questions"),
+        )
 
 
 @dataclass
@@ -289,17 +415,19 @@ def triage_symptoms(
     symptoms: Any,
     answers: dict[str, Any] | None = None,
     confidence_threshold: float = 0.6,
+    description: str | None = None,
+    semantic_search_enabled: bool | None = None,
 ) -> TriageResult:
     """
-    Given a list of symptom keywords, query symptom_specialty_map and
-    score specialties. If confidence is above threshold, return the
-    specialty. Otherwise return follow-up questions to narrow it down.
+    Score specialties from keyword matches and optional semantic retrieval.
 
     Args:
         symptoms: List of symptom strings from the patient.
         answers: Previous follow-up answers keyed by question text.
             Affirmative answers boost the linked specialty; negative answers penalize it.
         confidence_threshold: Minimum confidence to consider specialty determined.
+        description: Full natural-language symptom description, if available.
+        semantic_search_enabled: Override the TRIAGE_SEMANTIC_SEARCH_ENABLED setting.
     """
     symptom_texts = _coerce_symptom_inputs(symptoms)
     answers = answers if isinstance(answers, dict) else {}
@@ -310,7 +438,8 @@ def triage_symptoms(
         )
 
     # --- Emergency guard: runs BEFORE any specialty matching ---
-    is_emergency, category, emsg = classify_emergency(symptom_texts)
+    emergency_inputs = [*symptom_texts, _coerce_text(description)]
+    is_emergency, category, emsg = classify_emergency(emergency_inputs)
     if is_emergency:
         return TriageResult(
             specialty_determined=False,
@@ -346,16 +475,7 @@ def triage_symptoms(
                 seen_rows.add(row_key)
                 all_rows.append(row)
 
-    if not all_rows:
-        return TriageResult(
-            specialty_determined=False,
-            follow_up_questions=[
-                "I wasn't able to match those symptoms. "
-                "Could you describe them in more detail?"
-            ],
-        )
-
-    # Score specialties by summing weights
+    # Score specialties by summing keyword weights.
     scores: dict[str, float] = {}
     names: dict[str, str] = {}
     questions: dict[str, list[str]] = {}
@@ -372,6 +492,31 @@ def triage_symptoms(
         fq = row.get("follow_up_questions")
         if fq and isinstance(fq, list):
             questions.setdefault(sid, []).extend(fq)
+
+    # Optional semantic path: embed the patient's natural wording and add
+    # vector-similar knowledge chunks into the same score map.
+    if _semantic_search_enabled(semantic_search_enabled):
+        semantic_query = _build_semantic_query(symptom_texts, description)
+        try:
+            chunks = retrieve_medical_knowledge(
+                semantic_query,
+                match_count=settings.TRIAGE_SEMANTIC_MATCH_COUNT,
+                match_threshold=settings.TRIAGE_SEMANTIC_MATCH_THRESHOLD,
+            )
+            _apply_semantic_matches(scores, names, questions, chunks)
+        except Exception:
+            # Semantic search is additive. Missing OpenAI config, network failures,
+            # or an unapplied pgvector migration should not break keyword triage.
+            pass
+
+    if not scores:
+        return TriageResult(
+            specialty_determined=False,
+            follow_up_questions=[
+                "I wasn't able to match those symptoms. "
+                "Could you describe them in more detail?"
+            ],
+        )
 
     # Apply follow-up answer adjustments before normalizing
     if answers:

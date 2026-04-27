@@ -350,7 +350,7 @@ def list_appointments(
     sb = get_supabase()
     query = (
         sb.table("appointments")
-        .select("*,doctors(full_name),patients(uin,full_name)")
+        .select("*,doctors(full_name),patients(uin,full_name),specialties(name)")
         .order("created_at", desc=True)
         .limit(limit)
     )

@@ -14,7 +14,7 @@ This script is designed for a clean demo with the current seed data.
 
 ## Why These Paths Are Safe
 
-- Henry Long's booking uses `headache`, which routes cleanly to `Neurology`.
+- Henry Long's booking uses natural-language migraine/aura phrasing, which should route through semantic search to `Neurology` even though the patient does not say a clean keyword like `headache`.
 - `Neurology` is covered by `Dr. Priya Patel`, who has seeded availability on Wednesday, Thursday, and Friday afternoons.
 - Henry Mo already has one seeded `Orthopedics` appointment with `Dr. James Wilson`.
 - Dr. James Wilson has many weekday slots in the seed, so rescheduling should have multiple options.
@@ -22,10 +22,11 @@ This script is designed for a clean demo with the current seed data.
 ## Pre-Demo Checklist
 
 1. Rerun `backend/seed.sql`.
-2. Make sure Henry Long has no upcoming appointment before the demo starts.
-3. Make sure Henry Mo has one upcoming confirmed appointment.
-4. Run the demo in this order: Henry Long books, Henry Long cancels, then Henry Mo reschedules.
-5. Accept the first slot the assistant offers unless you need to slow the demo down.
+2. Confirm semantic triage is enabled: `TRIAGE_SEMANTIC_SEARCH_ENABLED=true`, `OPENAI_API_KEY` is set, and `backend/app/services/ingest_knowledge.py` has been run against the demo database.
+3. Make sure Henry Long has no upcoming appointment before the demo starts.
+4. Make sure Henry Mo has one upcoming confirmed appointment.
+5. Run the demo in this order: Henry Long books, Henry Long cancels, then Henry Mo reschedules.
+6. Accept the first slot the assistant offers unless you need to slow the demo down.
 
 Optional quick SQL check:
 
@@ -93,13 +94,13 @@ Henry Long: My UIN is 246 813 579.
 Henry Long: Yes.
 
 If asked what the visit is for:
-Henry Long: I have a headache.
+Henry Long: I keep getting this sharp pain behind my eyes, and sometimes I see flashing zigzag lights before it starts.
 
 If asked whether you have a specialist preference:
 Henry Long: I don't have a specialist preference.
 
 If asked whether the suggested specialty sounds right:
-Henry Long: Yes.
+Henry Long: Yes, neurology sounds right.
 
 If asked for a doctor preference:
 Henry Long: No preference.
@@ -118,6 +119,7 @@ Operator note:
 
 - Write down the doctor name and appointment time the assistant confirms.
 - You will use that same appointment in Part 2.
+- This wording is meant to exercise semantic search: the patient describes migraine-like symptoms without saying "headache" or "migraine."
 
 ## Part 2: Henry Long Cancels the Appointment He Just Booked
 
@@ -135,7 +137,7 @@ Henry Long: My UIN is 246 813 579.
 Henry Long: Yes.
 
 If asked which appointment:
-Henry Long: The appointment for my headache that I just booked.
+Henry Long: The neurology appointment I just booked for the sharp pain behind my eyes and flashing lights.
 
 --------- Alternative if you want a more natural prompt: -----------
 Henry Mo: I don't remember which one. Can you tell me when my upcoming appointment is?

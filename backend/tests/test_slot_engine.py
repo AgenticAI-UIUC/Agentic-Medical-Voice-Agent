@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import pytest
 
@@ -217,6 +217,7 @@ def test_find_slots_for_specialty_combines_active_doctors_and_sorts(
             "label": "early",
             "doctor_id": "doc-b",
             "doctor_name": "Dr. Beta",
+            "specialty_id": "cardiology",
         },
         {
             "start_at": "2026-04-06T20:00:00+00:00",
@@ -224,6 +225,7 @@ def test_find_slots_for_specialty_combines_active_doctors_and_sorts(
             "label": "late",
             "doctor_id": "doc-a",
             "doctor_name": "Dr. Alpha",
+            "specialty_id": "cardiology",
         },
     ]
 

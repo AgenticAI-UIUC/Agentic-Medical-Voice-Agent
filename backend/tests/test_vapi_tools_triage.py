@@ -47,9 +47,10 @@ def test_handle_list_specialties_falls_back_to_generic_message_without_gp(
 def test_handle_triage_normalizes_non_string_inputs(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
-    def fake_triage_symptoms(symptoms, answers):
+    def fake_triage_symptoms(symptoms, answers, **kwargs):
         captured["symptoms"] = symptoms
         captured["answers"] = answers
+        captured["description"] = kwargs.get("description")
         return TriageResult(
             specialty_determined=False,
             confidence=0.25,
@@ -75,6 +76,7 @@ def test_handle_triage_normalizes_non_string_inputs(monkeypatch) -> None:
         "Is the pain constant?": "yes",
         "2": "no",
     }
+    assert captured["description"] == ""
     assert result["status"] == "NEED_MORE_INFO"
     assert result["follow_up_questions"] == ["When did this start?"]
 
@@ -82,9 +84,10 @@ def test_handle_triage_normalizes_non_string_inputs(monkeypatch) -> None:
 def test_handle_triage_ignores_non_mapping_answers(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
-    def fake_triage_symptoms(symptoms, answers):
+    def fake_triage_symptoms(symptoms, answers, **kwargs):
         captured["symptoms"] = symptoms
         captured["answers"] = answers
+        captured["description"] = kwargs.get("description")
         return TriageResult(
             specialty_determined=False,
             confidence=0.0,
@@ -97,3 +100,34 @@ def test_handle_triage_ignores_non_mapping_answers(monkeypatch) -> None:
 
     assert captured["symptoms"] == ["headache"]
     assert captured["answers"] == {}
+    assert captured["description"] == "headache"
+
+
+def test_handle_triage_passes_natural_language_description(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_triage_symptoms(symptoms, answers, **kwargs):
+        captured["symptoms"] = symptoms
+        captured["answers"] = answers
+        captured["description"] = kwargs.get("description")
+        return TriageResult(
+            specialty_determined=True,
+            specialty_id="cardiology",
+            specialty_name="Cardiology",
+            confidence=0.92,
+        )
+
+    monkeypatch.setattr(triage, "triage_symptoms", fake_triage_symptoms)
+
+    result = triage._handle_triage(
+        {
+            "symptoms": ["chest discomfort"],
+            "description": "It feels like an elephant is sitting on my chest.",
+        },
+        {},
+    )
+
+    assert captured["symptoms"] == ["chest discomfort"]
+    assert captured["answers"] == {}
+    assert captured["description"] == "It feels like an elephant is sitting on my chest."
+    assert result["status"] == "SPECIALTY_FOUND"

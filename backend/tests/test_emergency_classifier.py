@@ -18,6 +18,7 @@ from app.services.triage_engine import classify_emergency
         (["I have crushing chest pressure"], "cardiac emergency"),
         (["heart attack"], "cardiac emergency"),
         (["tight chest pain radiating to arm"], "cardiac emergency"),
+        (["it feels like an elephant is sitting on my chest"], "cardiac emergency"),
         # Stroke
         (["stroke symptoms"], "possible stroke"),
         (["face drooping slurred speech"], "possible stroke"),

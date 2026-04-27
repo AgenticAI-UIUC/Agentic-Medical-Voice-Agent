@@ -60,13 +60,18 @@ Before deploying, confirm the production environment variables in Vercel:
 ```
 Patient calls in
   → Identify (new or returning patient via 9-digit UIN)
-  → Triage (symptom collection → specialty matching with follow-up questions)
+  → Triage (keyword matching + optional semantic search → specialty matching)
   → Find Slots (compute available times from doctor schedules)
   → Book / Reschedule / Cancel
   → Transcript saved to database
 ```
 
 The voice agent uses Vapi tool calling to invoke backend endpoints at each step. Slots are computed on-the-fly from weekly availability templates — no cron jobs or pre-generated data.
+
+Semantic triage is optional. When enabled, the backend embeds the patient's
+natural-language symptom description, searches the `medical_knowledge` pgvector
+table, and blends those semantic matches with the existing
+`symptom_specialty_map` keyword scores.
 
 Privacy rule: the voice assistant is self-service only. If a caller says they are acting for someone else, it should refuse to look up, book, reschedule, or cancel that other person's appointment and offer transfer to staff instead.
 
@@ -320,6 +325,17 @@ The seed data includes 10 specialties, 8 doctors with weekly schedules, 50+ symp
 
 `backend/seed.sql` sets the SQL session timezone to `America/Chicago` so seeded appointments and doctor blocks represent clinic-local demo times. This keeps the database timestamps aligned with the times the voice agent reads back to callers.
 
+To enable semantic triage, apply the pgvector migration, add
+`OPENAI_API_KEY` and `TRIAGE_SEMANTIC_SEARCH_ENABLED=true` to `.env`, then
+ingest the starter knowledge chunks:
+
+```bash
+psql "$SUPABASE_DB_URL" -f backend/migrations/010_medical_knowledge_rag.sql
+
+cd backend
+uv run python -m app.services.ingest_knowledge
+```
+
 If you want to wipe only this app's data and reseed without rebuilding the schema, run this in the Supabase SQL Editor first:
 
 ```sql
@@ -389,6 +405,11 @@ The admin dashboard will be available at **http://localhost:3000**.
 | `CLINIC_TIMEZONE`             | `America/Chicago`       | Timezone for slot computation            |
 | `SCHEDULING_HORIZON_DAYS`     | `14`                    | How far ahead patients can book          |
 | `VAPI_WEBHOOK_SECRET`         | —                       | Optional Vapi signature verification     |
+| `OPENAI_API_KEY`              | —                       | Optional embeddings key for semantic triage |
+| `TRIAGE_SEMANTIC_SEARCH_ENABLED` | `false`              | Enables pgvector semantic triage matches |
+| `TRIAGE_SEMANTIC_MATCH_COUNT` | `5`                     | Number of semantic chunks to retrieve    |
+| `TRIAGE_SEMANTIC_MATCH_THRESHOLD` | `0.3`               | Minimum vector similarity to include     |
+| `TRIAGE_SEMANTIC_SCORE_SCALE` | `2.0`                   | Weight multiplier for semantic scores    |
 | `FRONTEND_HOST`               | `http://localhost:3000` | Added to CORS origins automatically      |
 | `BACKEND_CORS_ORIGINS`        | `[]`                    | JSON array or comma-separated URLs       |
 
@@ -469,7 +490,7 @@ Admin endpoints require a bearer token. Doctor reads require an active user; doc
 
 ## Database Schema
 
-9 core tables in Supabase (PostgreSQL):
+10 core tables in Supabase (PostgreSQL):
 
 ```
 specialties ◀── symptom_specialty_map
@@ -482,12 +503,15 @@ doctor_specialties ──▶ doctors ◀── doctor_availability
                          │              ▲
                          ▼              │
                     conversations ──────┘
+
+medical_knowledge stores embedded triage chunks for optional semantic search.
 ```
 
 | Table                  | Description                                                    |
 | ---------------------- | -------------------------------------------------------------- |
 | **specialties**        | Medical specialty lookup (e.g., Cardiology, Dermatology)       |
 | **symptom_specialty_map** | Symptom → specialty mapping with weights and follow-up questions |
+| **medical_knowledge**  | Embedded triage knowledge chunks for semantic search             |
 | **doctors**            | Doctor profiles (name, image, active status)                   |
 | **doctor_specialties** | Doctor ↔ specialty links (many-to-many)                        |
 | **doctor_availability**| Weekly schedule templates (day, start/end time, slot duration)  |
@@ -612,6 +636,10 @@ Analyze patient symptoms to determine the appropriate medical specialty. May ret
     "symptoms": {
       "type": "string",
       "description": "Comma-separated list of the patient's symptoms"
+    },
+    "description": {
+      "type": "string",
+      "description": "The patient's full natural-language symptom description, preserving their original wording when possible"
     },
     "answers": {
       "type": "object",

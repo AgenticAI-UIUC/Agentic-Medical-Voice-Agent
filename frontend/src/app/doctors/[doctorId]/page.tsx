@@ -107,7 +107,7 @@ function DetailRow({
         <dt className="text-xs font-medium uppercase text-muted-foreground">
           {label}
         </dt>
-        <dd className="mt-1 break-words text-sm">
+        <dd className="mt-1 wrap-break-word text-sm">
           {value?.trim() || 'Not recorded'}
         </dd>
       </div>
@@ -122,7 +122,7 @@ function ScheduleTableSkeleton({ days }: { days: Date[] }) {
       aria-label="Loading doctor schedule"
       className="overflow-x-auto rounded-xl border"
     >
-      <div className="grid min-w-[980px] grid-cols-[90px_repeat(7,minmax(120px,1fr))]">
+      <div className="grid min-w-245 grid-cols-[90px_repeat(7,minmax(120px,1fr))]">
         <div className="border-b bg-muted/40 p-3" />
         {days.map((day) => (
           <div
@@ -268,7 +268,7 @@ export default function DoctorSchedulePage() {
 
       {scheduleQuery.isSuccess && (
         <div className="overflow-x-auto rounded-xl border">
-          <div className="grid min-w-[980px] grid-cols-[90px_repeat(7,minmax(120px,1fr))]">
+          <div className="grid min-w-245 grid-cols-[90px_repeat(7,minmax(120px,1fr))]">
             <div className="border-b bg-muted/40 p-3" />
             {days.map((day) => (
               <div

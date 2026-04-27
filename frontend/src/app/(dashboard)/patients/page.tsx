@@ -4,10 +4,13 @@ import {
   CalendarCheck2,
   CalendarClock,
   Clock3,
+  FileText,
+  Link2,
   Mail,
   Phone,
   RefreshCw,
   Search,
+  Stethoscope,
   UserRound,
   Users,
 } from 'lucide-react';
@@ -60,6 +63,21 @@ function formatDateTime(value?: string | null) {
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+function formatTime(value?: string | null) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function formatTimeRange(start?: string | null, end?: string | null) {
+  if (!start && !end) return '-';
+  return `${formatTime(start)} - ${formatTime(end)}`;
 }
 
 function formatDate(value?: string | null) {
@@ -148,6 +166,57 @@ function matchesPatient(patient: Patient, search: string) {
     patient.phone,
     patient.email ?? '',
   ].some((value) => value.toLowerCase().includes(query));
+}
+
+function DetailBlock({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value?: string | number | null;
+  mono?: boolean;
+}) {
+  const displayValue =
+    value === undefined || value === null || value === '' ? '-' : value;
+
+  return (
+    <div>
+      <p className="text-xs font-medium uppercase text-muted-foreground">
+        {label}
+      </p>
+      <p
+        className={cn(
+          'mt-1 break-words',
+          mono && 'font-mono text-xs',
+        )}
+      >
+        {displayValue}
+      </p>
+    </div>
+  );
+}
+
+function NarrativeRow({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof FileText;
+  label: string;
+  value?: string | null;
+}) {
+  if (!value?.trim()) return null;
+
+  return (
+    <div className="rounded-md border bg-muted/20 p-3">
+      <p className="flex items-center gap-2 text-xs font-medium uppercase text-muted-foreground">
+        <Icon className="h-4 w-4" />
+        {label}
+      </p>
+      <p className="mt-2 whitespace-pre-wrap break-words text-sm">{value}</p>
+    </div>
+  );
 }
 
 export default function PatientsPage() {
@@ -513,45 +582,55 @@ export default function PatientsPage() {
                         </div>
 
                         <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                          <DetailBlock
+                            label="Specialty"
+                            value={appointment.specialties?.name}
+                          />
+                          <DetailBlock
+                            label="Urgency"
+                            value={normalizeStatus(appointment.urgency)}
+                          />
+                          <DetailBlock
+                            label="Booked at"
+                            value={formatDateTime(appointment.created_at)}
+                          />
                           <div>
                             <p className="text-xs font-medium uppercase text-muted-foreground">
-                              Booked at
+                              Time
                             </p>
-                            <p>{formatDateTime(appointment.created_at)}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs font-medium uppercase text-muted-foreground">
-                              Urgency
-                            </p>
-                            <p>{normalizeStatus(appointment.urgency)}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs font-medium uppercase text-muted-foreground">
-                              Ends
-                            </p>
-                            <p>
+                            <p className="mt-1">
                               <Clock3 className="mr-1 inline h-4 w-4 text-muted-foreground" />
-                              {formatDateTime(appointment.end_at)}
+                              {formatTimeRange(
+                                appointment.start_at,
+                                appointment.end_at,
+                              )}
                             </p>
                           </div>
+                          <DetailBlock
+                            label="Follow-up from"
+                            value={appointment.follow_up_from_id}
+                            mono
+                          />
                         </div>
 
-                        {appointment.reason || appointment.symptoms ? (
-                          <div className="mt-3 space-y-2 border-t pt-3">
-                            {appointment.reason ? (
-                              <p className="break-words">
-                                <span className="font-medium">Reason:</span>{' '}
-                                {appointment.reason}
-                              </p>
-                            ) : null}
-                            {appointment.symptoms ? (
-                              <p className="break-words">
-                                <span className="font-medium">Symptoms:</span>{' '}
-                                {appointment.symptoms}
-                              </p>
-                            ) : null}
-                          </div>
-                        ) : null}
+                        <div className="mt-3 grid gap-3 border-t pt-3">
+                          <NarrativeRow
+                            icon={Stethoscope}
+                            label="Reason"
+                            value={appointment.reason}
+                          />
+                          <NarrativeRow
+                            icon={FileText}
+                            label="Symptoms"
+                            value={appointment.symptoms}
+                          />
+                          {appointment.specialties?.name ? (
+                            <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <Link2 className="h-4 w-4" />
+                              Routed to {appointment.specialties.name} during booking.
+                            </p>
+                          ) : null}
+                        </div>
                       </div>
                     ))
                   )}
