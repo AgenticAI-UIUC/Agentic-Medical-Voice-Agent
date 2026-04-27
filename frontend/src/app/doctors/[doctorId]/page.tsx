@@ -16,6 +16,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { Fragment } from 'react';
+import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -202,14 +203,18 @@ export default function DoctorSchedulePage() {
       cancelAppointment(token ?? '', appointmentId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: scheduleQueryKey });
+      toast.success('Appointment cancelled');
       setSelectedSlot(null);
       setIsConfirmingCancel(false);
       setCancelError(null);
     },
     onError: (error) => {
-      setCancelError(
-        getApiErrorMessage(error, 'Could not cancel the appointment.'),
+      const message = getApiErrorMessage(
+        error,
+        'Could not cancel the appointment.',
       );
+      setCancelError(message);
+      toast.error(message);
     },
   });
 
