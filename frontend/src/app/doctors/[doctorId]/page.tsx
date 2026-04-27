@@ -1,17 +1,34 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import {
+  AlertCircle,
+  CalendarClock,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  Mail,
+  Phone,
+  UserRound,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { Fragment } from 'react';
 
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useHasMounted } from '@/hooks/use-has-mounted';
 import { getAccessToken } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
-import { getDoctorSchedule } from '@/lib/api/doctors';
+import { type DoctorSlot, getDoctorSchedule } from '@/lib/api/doctors';
 import { logout } from '@/hooks/use-auth';
 
 const START_HOUR = 8;
@@ -41,6 +58,61 @@ function hourLabel(hour: number) {
 
 function shouldShowSkeletonSlot(hour: number, dayIndex: number) {
   return (hour + dayIndex) % 3 === 0 || (hour === 9 && dayIndex % 2 === 0);
+}
+
+function slotTime(slot: DoctorSlot) {
+  return new Date(slot.start_at).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function slotTimeRange(slot: DoctorSlot) {
+  const start = slotTime(slot);
+  const end = new Date(slot.end_at).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  return `${start} - ${end}`;
+}
+
+function patientName(slot: DoctorSlot) {
+  return slot.patient?.full_name ?? slot.patient?.uin ?? 'Booked patient';
+}
+
+function patientHref(slot: DoctorSlot) {
+  const search = new URLSearchParams();
+  if (slot.patient?.id) {
+    search.set('patientId', slot.patient.id);
+  } else if (slot.patient?.uin) {
+    search.set('uin', slot.patient.uin);
+  }
+  const qs = search.toString();
+  return `/patients${qs ? `?${qs}` : ''}`;
+}
+
+function DetailRow({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof UserRound;
+  label: string;
+  value?: string | null;
+}) {
+  return (
+    <div className="flex items-start gap-3 rounded-md border p-3">
+      <Icon className="mt-0.5 h-4 w-4 text-muted-foreground" />
+      <div className="min-w-0">
+        <dt className="text-xs font-medium uppercase text-muted-foreground">
+          {label}
+        </dt>
+        <dd className="mt-1 break-words text-sm">
+          {value?.trim() || 'Not recorded'}
+        </dd>
+      </div>
+    </div>
+  );
 }
 
 function ScheduleTableSkeleton({ days }: { days: Date[] }) {
@@ -99,6 +171,7 @@ export default function DoctorSchedulePage() {
   const token = hasMounted ? getAccessToken() : null;
 
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const [selectedSlot, setSelectedSlot] = useState<DoctorSlot | null>(null);
 
   const scheduleQuery = useQuery({
     queryKey: ['doctor-schedule', params.doctorId, formatDateOnly(weekStart)],
@@ -135,9 +208,7 @@ export default function DoctorSchedulePage() {
 
   if (!hasMounted) {
     return (
-      <main className="mx-auto min-h-screen max-w-7xl p-6">
-        Loading app...
-      </main>
+      <main className="mx-auto min-h-screen max-w-7xl p-6">Loading app...</main>
     );
   }
 
@@ -238,28 +309,42 @@ export default function DoctorSchedulePage() {
                   return (
                     <div
                       key={`${day.toISOString()}-${hour}`}
-                      className="relative border-b border-l p-1"
+                      className="relative min-h-12 border-b border-l p-1"
                     >
-                      {slots.map((slot) => (
-                        <div
-                          key={slot.id}
-                          className={`mb-1 rounded-md px-2 py-1 text-xs font-medium ${
-                            slot.status === 'AVAILABLE'
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : slot.status === 'BOOKED'
-                                ? 'bg-rose-100 text-rose-700'
-                                : 'bg-slate-200 text-slate-700'
-                          }`}
-                        >
-                          <p>
-                            {new Date(slot.start_at).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </p>
-                          <p>{slot.status}</p>
-                        </div>
-                      ))}
+                      {slots.map((slot) => {
+                        const slotClass = `mb-1 w-full rounded-md px-2 py-1 text-left text-xs font-medium ${
+                          slot.status === 'AVAILABLE'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : slot.status === 'BOOKED'
+                              ? 'bg-rose-100 text-rose-700 hover:bg-rose-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 cursor-pointer'
+                              : 'bg-slate-200 text-slate-700'
+                        }`;
+
+                        if (slot.status === 'BOOKED') {
+                          return (
+                            <button
+                              key={slot.id}
+                              type="button"
+                              className={slotClass}
+                              onClick={() => setSelectedSlot(slot)}
+                              aria-label={`View booked appointment for ${patientName(slot)}`}
+                            >
+                              <p>{slotTime(slot)}</p>
+                              <p>BOOKED</p>
+                              <p className="truncate text-[11px] font-normal">
+                                {patientName(slot)}
+                              </p>
+                            </button>
+                          );
+                        }
+
+                        return (
+                          <div key={slot.id} className={slotClass}>
+                            <p>{slotTime(slot)}</p>
+                            <p>{slot.status}</p>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })}
@@ -268,6 +353,72 @@ export default function DoctorSchedulePage() {
           </div>
         </div>
       )}
+
+      <Dialog
+        open={selectedSlot !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedSlot(null);
+        }}
+      >
+        {selectedSlot && (
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{patientName(selectedSlot)}</DialogTitle>
+              <DialogDescription>
+                Booked appointment, {slotTimeRange(selectedSlot)}
+              </DialogDescription>
+            </DialogHeader>
+
+            <dl className="grid gap-3 sm:grid-cols-2">
+              <DetailRow
+                icon={UserRound}
+                label="UIN"
+                value={selectedSlot.patient?.uin}
+              />
+              <DetailRow
+                icon={Phone}
+                label="Phone"
+                value={selectedSlot.patient?.phone}
+              />
+              <DetailRow
+                icon={Mail}
+                label="Email"
+                value={selectedSlot.patient?.email}
+              />
+              <DetailRow
+                icon={AlertCircle}
+                label="Urgency"
+                value={selectedSlot.urgency}
+              />
+              <div className="sm:col-span-2">
+                <DetailRow
+                  icon={CalendarClock}
+                  label="Reason"
+                  value={selectedSlot.reason}
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <DetailRow
+                  icon={FileText}
+                  label="Symptoms"
+                  value={selectedSlot.symptoms}
+                />
+              </div>
+            </dl>
+
+            <DialogFooter>
+              {(selectedSlot.patient?.id || selectedSlot.patient?.uin) && (
+                <Button asChild>
+                  <Link href={patientHref(selectedSlot)}>
+                    <UserRound className="h-4 w-4" />
+                    View patient
+                  </Link>
+                </Button>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        )}
+      </Dialog>
     </main>
   );
 }

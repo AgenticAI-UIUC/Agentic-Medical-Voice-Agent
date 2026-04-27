@@ -13,6 +13,42 @@ Built with **Vapi.ai** for voice orchestration, **FastAPI** for backend logic, *
 - Frontend: https://medicalvoiceagentfrontend.vercel.app
 - Backend: https://medicalvoiceagentbackend.vercel.app
 
+## Deploy to Vercel
+
+Both apps are already linked to Vercel projects through their local `.vercel/`
+folders:
+
+- Backend: `medical_voice_agent_back_end`
+- Frontend: `medical_voice_agent_front_end`
+
+Deploy the latest backend first, then the frontend:
+
+```bash
+# From the repo root
+cd backend
+vercel --prod
+
+cd ../frontend
+vercel --prod
+```
+
+If the Vercel CLI is not installed globally, use:
+
+```bash
+cd backend
+pnpm dlx vercel --prod
+
+cd ../frontend
+pnpm dlx vercel --prod
+```
+
+Before deploying, confirm the production environment variables in Vercel:
+
+- Backend: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `FRONTEND_HOST`,
+  `BACKEND_CORS_ORIGINS`, and optional `VAPI_WEBHOOK_SECRET`
+- Frontend: `NEXT_PUBLIC_API_BASE_URL` should point to the production backend,
+  for example `https://medicalvoiceagentbackend.vercel.app`
+
 ### Demo Login
 
 | Email               | Password |

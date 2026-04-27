@@ -22,12 +22,24 @@ class DoctorCard(BaseModel):
     specialties: list[str] = Field(default_factory=list)
 
 
+class SlotPatient(BaseModel):
+    id: str | None = None
+    uin: str | None = None
+    full_name: str | None = None
+    phone: str | None = None
+    email: str | None = None
+
+
 class DoctorSlot(BaseModel):
     id: str
     start_at: str
     end_at: str
     status: str
     appointment_id: str | None = None
+    patient: SlotPatient | None = None
+    reason: str | None = None
+    symptoms: str | None = None
+    urgency: str | None = None
 
 
 class DaySchedule(BaseModel):
@@ -156,7 +168,10 @@ def get_doctor_schedule(
     appointments = (
         getattr(
             sb.table("appointments")
-            .select("id,start_at,end_at,status")
+            .select(
+                "id,start_at,end_at,status,reason,symptoms,urgency,"
+                "patients(id,uin,full_name,phone,email)"
+            )
             .eq("doctor_id", doctor_id)
             .neq("status", "CANCELLED")
             .lt("start_at", end_utc.isoformat())
@@ -212,12 +227,24 @@ def get_doctor_schedule(
         if appointment:
             slot_status = "BOOKED"
             appointment_id = appointment["id"]
+            patient = appointment.get("patients")
+            reason = appointment.get("reason")
+            symptoms = appointment.get("symptoms")
+            urgency = appointment.get("urgency")
         elif _is_blocked(slot_start, slot_end, block_ranges):
             slot_status = "BLOCKED"
             appointment_id = None
+            patient = None
+            reason = None
+            symptoms = None
+            urgency = None
         else:
             slot_status = "AVAILABLE"
             appointment_id = None
+            patient = None
+            reason = None
+            symptoms = None
+            urgency = None
 
         day_key = slot_start.astimezone(clinic_tz).date().isoformat()
         if day_key not in slots_by_day:
@@ -230,6 +257,10 @@ def get_doctor_schedule(
                 end_at=slot_end.isoformat(),
                 status=slot_status,
                 appointment_id=appointment_id,
+                patient=patient,
+                reason=reason,
+                symptoms=symptoms,
+                urgency=urgency,
             )
         )
 

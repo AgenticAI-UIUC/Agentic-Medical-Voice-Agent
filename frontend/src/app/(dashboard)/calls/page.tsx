@@ -9,7 +9,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { PageHeader } from '@/components/common/page-header';
 import { Button } from '@/components/ui/button';
@@ -220,6 +220,8 @@ export default function CallsPage() {
   const callsQuery = useStaffCallsQuery({ status, limit: 50 });
   const calls = callsQuery.data ?? [];
   const [selectedCallId, setSelectedCallId] = useState<string | null>(null);
+  const transcriptScrollRef = useRef<HTMLDivElement | null>(null);
+  const shouldStickToTranscriptBottomRef = useRef(true);
 
   const selectedCall =
     calls.find((call) => call.id === selectedCallId) ?? calls[0] ?? null;
@@ -234,6 +236,42 @@ export default function CallsPage() {
   const transcriptLines = selectedCall
     ? normalizeTranscript(selectedCall.transcript)
     : [];
+  const selectedCallIdForScroll = selectedCall?.id ?? null;
+  const latestTranscriptLineForScroll = transcriptLines.at(-1);
+  const transcriptScrollFingerprint = [
+    selectedCallIdForScroll,
+    transcriptLines.length,
+    latestTranscriptLineForScroll?.role,
+    latestTranscriptLineForScroll?.text,
+    latestTranscriptLineForScroll?.isPartial ? 'partial' : 'final',
+  ].join(':');
+
+  useEffect(() => {
+    shouldStickToTranscriptBottomRef.current = true;
+  }, [selectedCallIdForScroll]);
+
+  useEffect(() => {
+    const container = transcriptScrollRef.current;
+    if (!container || !shouldStickToTranscriptBottomRef.current) return;
+
+    const animationFrame = requestAnimationFrame(() => {
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'smooth',
+      });
+    });
+
+    return () => cancelAnimationFrame(animationFrame);
+  }, [transcriptScrollFingerprint]);
+
+  function handleTranscriptScroll() {
+    const container = transcriptScrollRef.current;
+    if (!container) return;
+
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    shouldStickToTranscriptBottomRef.current = distanceFromBottom < 80;
+  }
 
   return (
     <div className="space-y-6">
@@ -441,7 +479,11 @@ export default function CallsPage() {
                   </div>
                 ) : null}
 
-                <div className="max-h-[560px] space-y-3 overflow-y-auto pr-1">
+                <div
+                  ref={transcriptScrollRef}
+                  onScroll={handleTranscriptScroll}
+                  className="max-h-[560px] space-y-3 overflow-y-auto pr-1"
+                >
                   {transcriptLines.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
                       No transcript has arrived yet.

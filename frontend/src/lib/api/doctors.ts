@@ -7,12 +7,24 @@ export type DoctorCard = {
   specialties: string[];
 };
 
+export type SlotPatient = {
+  id?: string | null;
+  uin?: string | null;
+  full_name?: string | null;
+  phone?: string | null;
+  email?: string | null;
+};
+
 export type DoctorSlot = {
   id: string;
   start_at: string;
   end_at: string;
   status: 'AVAILABLE' | 'BOOKED' | 'BLOCKED';
   appointment_id: string | null;
+  patient?: SlotPatient | null;
+  reason?: string | null;
+  symptoms?: string | null;
+  urgency?: string | null;
 };
 
 export type DaySchedule = {

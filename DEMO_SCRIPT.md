@@ -62,7 +62,8 @@ TRUNCATE TABLE
   public.symptom_specialty_map,
   public.patients,
   public.doctors,
-  public.specialties
+  public.specialties,
+  public.conversations
 RESTART IDENTITY CASCADE;
 ```
 

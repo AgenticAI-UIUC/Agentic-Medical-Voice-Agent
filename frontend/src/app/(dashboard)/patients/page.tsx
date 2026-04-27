@@ -45,6 +45,7 @@ import type {
 import { cn } from '@/lib/utils';
 
 const ACTIVE_STATUSES = new Set(['CONFIRMED']);
+const VISIT_STATUSES = new Set(['CONFIRMED', 'COMPLETED']);
 const EMPTY_PATIENTS: Patient[] = [];
 const EMPTY_APPOINTMENTS: PatientAppointment[] = [];
 
@@ -103,9 +104,14 @@ function appointmentPatientKey(appointment: PatientAppointment) {
   return appointment.patient_id || appointment.patients?.uin || '';
 }
 
-function appointmentSortValue(appointment: PatientAppointment) {
+function appointmentTimeSortValue(appointment: PatientAppointment) {
   const value = new Date(appointment.start_at).getTime();
   return Number.isNaN(value) ? 0 : value;
+}
+
+function appointmentCreatedSortValue(appointment: PatientAppointment) {
+  const value = new Date(appointment.created_at ?? '').getTime();
+  return Number.isNaN(value) ? appointmentTimeSortValue(appointment) : value;
 }
 
 function upcomingAppointment(appointments: PatientAppointment[]) {
@@ -114,15 +120,23 @@ function upcomingAppointment(appointments: PatientAppointment[]) {
     .filter(
       (appointment) =>
         ACTIVE_STATUSES.has(appointment.status) &&
-        appointmentSortValue(appointment) >= now,
+        appointmentTimeSortValue(appointment) >= now,
     )
-    .sort((a, b) => appointmentSortValue(a) - appointmentSortValue(b))[0];
+    .sort((a, b) => appointmentTimeSortValue(a) - appointmentTimeSortValue(b))[0];
 }
 
-function lastAppointment(appointments: PatientAppointment[]) {
-  return [...appointments].sort(
-    (a, b) => appointmentSortValue(b) - appointmentSortValue(a),
-  )[0];
+function lastVisitAppointment(appointments: PatientAppointment[]) {
+  const now = Date.now();
+  return appointments
+    .filter((appointment) => {
+      const startAt = appointmentTimeSortValue(appointment);
+      return (
+        VISIT_STATUSES.has(appointment.status) &&
+        startAt > 0 &&
+        startAt < now
+      );
+    })
+    .sort((a, b) => appointmentTimeSortValue(b) - appointmentTimeSortValue(a))[0];
 }
 
 function matchesPatient(patient: Patient, search: string) {
@@ -205,7 +219,7 @@ export default function PatientsPage() {
     : [];
 
   const sortedSelectedAppointments = [...selectedAppointments].sort(
-    (a, b) => appointmentSortValue(b) - appointmentSortValue(a),
+    (a, b) => appointmentCreatedSortValue(b) - appointmentCreatedSortValue(a),
   );
 
   const stats = {
@@ -458,7 +472,7 @@ export default function PatientsPage() {
                     </p>
                     <p>
                       {formatDateTime(
-                        lastAppointment(selectedAppointments)?.start_at,
+                        lastVisitAppointment(selectedAppointments)?.start_at,
                       )}
                     </p>
                   </div>
@@ -499,6 +513,12 @@ export default function PatientsPage() {
                         </div>
 
                         <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                          <div>
+                            <p className="text-xs font-medium uppercase text-muted-foreground">
+                              Booked at
+                            </p>
+                            <p>{formatDateTime(appointment.created_at)}</p>
+                          </div>
                           <div>
                             <p className="text-xs font-medium uppercase text-muted-foreground">
                               Urgency

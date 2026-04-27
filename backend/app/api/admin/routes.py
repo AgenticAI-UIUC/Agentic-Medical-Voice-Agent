@@ -351,7 +351,7 @@ def list_appointments(
     query = (
         sb.table("appointments")
         .select("*,doctors(full_name),patients(uin,full_name)")
-        .order("start_at", desc=True)
+        .order("created_at", desc=True)
         .limit(limit)
     )
     if status:
