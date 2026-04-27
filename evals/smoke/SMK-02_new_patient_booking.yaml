@@ -36,11 +36,7 @@ user_script:
   - speaker: user
     text: Yes.
   - speaker: user
-    text: I have a rash on both arms and it's really itchy.
-  - speaker: user
-    text: Four.
-  - speaker: user
-    text: It feels irritated and keeps spreading.
+    text: I have a rash on both arms and it's really itchy, irritated, and spreading.
   - speaker: user
     text: I don't have a specialist in mind.
   - speaker: user
@@ -93,6 +89,7 @@ must_not_do:
   - Call register_patient before collecting full_name and confirmed phone.
   - Reset the conversation with "What can I help you with today?" after registration.
   - Ask whether this newly registered patient is calling for a follow-up.
+  - Ask for a severity rating before triage.
   - Claim registration or booking succeeded before the tool confirms it.
 
 failure_signals:

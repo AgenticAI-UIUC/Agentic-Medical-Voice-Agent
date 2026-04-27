@@ -19,28 +19,58 @@ BUCKETS: dict[Bucket, tuple[time, time]] = {
 }
 
 WEEKDAY_MAP: dict[str, int] = {
-    "mon": 0, "monday": 0,
-    "tue": 1, "tues": 1, "tuesday": 1,
-    "wed": 2, "weds": 2, "wednesday": 2,
-    "thu": 3, "thur": 3, "thurs": 3, "thursday": 3,
-    "fri": 4, "friday": 4,
-    "sat": 5, "saturday": 5,
-    "sun": 6, "sunday": 6,
+    "mon": 0,
+    "monday": 0,
+    "tue": 1,
+    "tues": 1,
+    "tuesday": 1,
+    "wed": 2,
+    "weds": 2,
+    "wednesday": 2,
+    "thu": 3,
+    "thur": 3,
+    "thurs": 3,
+    "thursday": 3,
+    "fri": 4,
+    "friday": 4,
+    "sat": 5,
+    "saturday": 5,
+    "sun": 6,
+    "sunday": 6,
 }
 
 MONTH_MAP: dict[str, int] = {
-    "jan": 1, "january": 1, "feb": 2, "february": 2,
-    "mar": 3, "march": 3, "apr": 4, "april": 4,
-    "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
-    "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9,
-    "oct": 10, "october": 10, "nov": 11, "november": 11,
-    "dec": 12, "december": 12,
+    "jan": 1,
+    "january": 1,
+    "feb": 2,
+    "february": 2,
+    "mar": 3,
+    "march": 3,
+    "apr": 4,
+    "april": 4,
+    "may": 5,
+    "jun": 6,
+    "june": 6,
+    "jul": 7,
+    "july": 7,
+    "aug": 8,
+    "august": 8,
+    "sep": 9,
+    "sept": 9,
+    "september": 9,
+    "oct": 10,
+    "october": 10,
+    "nov": 11,
+    "november": 11,
+    "dec": 12,
+    "december": 12,
 }
 
 
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
+
 
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
@@ -63,10 +93,11 @@ def _normalize(s: str) -> str:
 # Date range parsing
 # ------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class DayRange:
     start_date: date  # inclusive
-    end_date: date    # exclusive
+    end_date: date  # exclusive
 
 
 def _next_weekday(from_date: date, target: int, strictly_after: bool) -> date:
@@ -90,8 +121,10 @@ def _parse_mmdd(s: str, year: int) -> date | None:
 
 def _parse_month_day(s: str, year: int) -> date | None:
     """Handles 'feb 24' and '24 feb' patterns."""
-    for pattern in [r"([a-z]+)\s+(\d{1,2})(?:\s+(\d{2,4}))?",
-                    r"(\d{1,2})\s+([a-z]+)(?:\s+(\d{2,4}))?"]:
+    for pattern in [
+        r"([a-z]+)\s+(\d{1,2})(?:\s+(\d{2,4}))?",
+        r"(\d{1,2})\s+([a-z]+)(?:\s+(\d{2,4}))?",
+    ]:
         m = re.fullmatch(pattern, s)
         if not m:
             continue
@@ -182,6 +215,7 @@ def parse_time_bucket(preferred_time: str) -> Bucket:
 # Slot filtering / formatting
 # ------------------------------------------------------------------
 
+
 def day_range_to_utc(dr: DayRange) -> tuple[datetime, datetime]:
     start = datetime.combine(dr.start_date, time.min, tzinfo=CLINIC_TZ)
     end = datetime.combine(dr.end_date, time.min, tzinfo=CLINIC_TZ)
@@ -201,7 +235,9 @@ def format_for_voice(dt_utc: datetime) -> str:
     local = dt_utc.astimezone(CLINIC_TZ)
     hour = local.strftime("%I").lstrip("0") or "12"
     ampm = local.strftime("%p")
-    return f"{local.strftime('%A')}, {local.strftime('%B')} {local.day} at {hour} {ampm}"
+    return (
+        f"{local.strftime('%A')}, {local.strftime('%B')} {local.day} at {hour} {ampm}"
+    )
 
 
 def format_date_for_voice(dt_utc: datetime) -> str:

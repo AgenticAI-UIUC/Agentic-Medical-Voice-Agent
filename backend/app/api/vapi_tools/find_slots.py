@@ -5,18 +5,27 @@ from typing import Any
 from fastapi import APIRouter, Request
 
 from app.api.vapi_helpers import coerce_string, handle_tool_calls
-from app.services.slot_engine import find_slots_for_specialty, find_available_slots, is_next_available_request
+from app.services.slot_engine import (
+    find_slots_for_specialty,
+    find_available_slots,
+    is_next_available_request,
+)
 from app.services.time_utils import parse_time_bucket
 
 router = APIRouter()
 
 
 def _should_retry_with_any(preferred_day: str, preferred_time: str) -> bool:
-    return is_next_available_request(preferred_day) and parse_time_bucket(preferred_time) != "any"
+    return (
+        is_next_available_request(preferred_day)
+        and parse_time_bucket(preferred_time) != "any"
+    )
 
 
 def _join_labels(labels: list[str]) -> str:
-    return labels[0] if len(labels) == 1 else ", ".join(labels[:-1]) + " or " + labels[-1]
+    return (
+        labels[0] if len(labels) == 1 else ", ".join(labels[:-1]) + " or " + labels[-1]
+    )
 
 
 def _collapse_same_day_labels(labels: list[str]) -> tuple[str, bool]:
@@ -47,11 +56,15 @@ def _format_slot_options(slots: list[dict[str, Any]], include_doctor: bool) -> s
                 return f"with {doctor_name} on {spoken_labels}"
             return f"with {doctor_name}: {spoken_labels}"
 
-    detailed_labels = [f"{slot['label']} with {slot['doctor_name']}" for slot in visible_slots]
+    detailed_labels = [
+        f"{slot['label']} with {slot['doctor_name']}" for slot in visible_slots
+    ]
     return _join_labels(detailed_labels)
 
 
-def _relaxed_message(preferred_time: str, slots: list[dict[str, Any]], include_doctor: bool) -> str:
+def _relaxed_message(
+    preferred_time: str, slots: list[dict[str, Any]], include_doctor: bool
+) -> str:
     spoken = _format_slot_options(slots, include_doctor)
     bucket = parse_time_bucket(preferred_time)
     bucket_text = "morning" if bucket == "morning" else "afternoon"
@@ -76,7 +89,9 @@ def _handle_find_slots(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
                 return {
                     "status": "OK",
                     "slots": slots,
-                    "message": _relaxed_message(preferred_time, slots, include_doctor=False),
+                    "message": _relaxed_message(
+                        preferred_time, slots, include_doctor=False
+                    ),
                 }
         if not slots:
             return {

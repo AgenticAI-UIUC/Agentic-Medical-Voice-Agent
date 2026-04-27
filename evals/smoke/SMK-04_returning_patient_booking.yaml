@@ -27,11 +27,7 @@ user_script:
   - speaker: user
     text: Yes.
   - speaker: user
-    text: I've been having stomach pain and nausea.
-  - speaker: user
-    text: Six.
-  - speaker: user
-    text: It's been on and off for a few days.
+    text: I've been having stomach pain and nausea on and off for a few days.
   - speaker: user
     text: No specialist preference.
   - speaker: user
@@ -78,6 +74,7 @@ must_do:
 must_not_do:
   - Call register_patient in this flow.
   - Ask whether the returning patient is a new patient after identification.
+  - Ask for a severity rating before triage.
   - Skip patient identification and go straight to triage or slots.
 
 failure_signals:

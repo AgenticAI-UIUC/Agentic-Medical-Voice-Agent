@@ -103,6 +103,89 @@ def coerce_optional_int(
     return candidate
 
 
+_NUMBER_WORDS_1_TO_10 = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+}
+
+_QUALITATIVE_SEVERITY_PATTERNS: tuple[tuple[int, tuple[str, ...]], ...] = (
+    (
+        10,
+        (
+            r"\bworst\b",
+            r"\bunbearable\b",
+            r"\bexcruciating\b",
+            r"\bagonizing\b",
+            r"\bintolerable\b",
+            r"\bcan(?:not|'t)\s+stand\b",
+        ),
+    ),
+    (
+        2,
+        (
+            r"\bnot\s+(?:that\s+)?bad\b",
+            r"\bmild\b",
+            r"\bminor\b",
+            r"\bslight\b",
+            r"\ba\s+little\b",
+            r"\bbarely\b",
+        ),
+    ),
+    (
+        5,
+        (
+            r"\bmoderate\b",
+            r"\bmedium\b",
+            r"\bmanageable\b",
+            r"\bnot\s+too\s+bad\b",
+            r"\bnot\s+(?:terrible|severe)\b",
+            r"\bso\s+so\b",
+        ),
+    ),
+    (
+        8,
+        (
+            r"\bsevere\b",
+            r"\b(?:very|really|extremely|super|quite|pretty)\s+bad\b",
+            r"\bterrible\b",
+            r"\bawful\b",
+            r"\bextreme\b",
+        ),
+    ),
+)
+
+
+def coerce_severity_rating(value: Any) -> int | None:
+    rating = coerce_optional_int(value, minimum=1, maximum=10)
+    if rating is not None:
+        return rating
+    if not isinstance(value, str):
+        return None
+
+    normalized = re.sub(r"[^a-z0-9']+", " ", value.lower()).strip()
+    digit_match = re.search(r"\b(10|[1-9])\b", normalized)
+    if digit_match:
+        return int(digit_match.group(1))
+
+    for word, number in _NUMBER_WORDS_1_TO_10.items():
+        if re.search(rf"\b{word}\b", normalized):
+            return number
+
+    for score, patterns in _QUALITATIVE_SEVERITY_PATTERNS:
+        if any(re.search(pattern, normalized) for pattern in patterns):
+            return score
+
+    return None
+
+
 def coerce_allowed_string(
     value: Any,
     allowed: set[str],
@@ -126,7 +209,9 @@ def is_valid_uuid(value: Any) -> bool:
         return False
 
 
-def vapi_tool_response(tool_call_id: str | None, result: dict[str, Any]) -> dict[str, Any]:
+def vapi_tool_response(
+    tool_call_id: str | None, result: dict[str, Any]
+) -> dict[str, Any]:
     """Build a single tool result in Vapi's expected format."""
     return {
         "toolCallId": tool_call_id,

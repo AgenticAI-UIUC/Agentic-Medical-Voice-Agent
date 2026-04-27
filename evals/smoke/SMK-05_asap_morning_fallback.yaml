@@ -1,5 +1,5 @@
 id: SMK-05
-title: "As soon as possible" plus morning falls back to earliest available slots
+title: As soon as possible plus morning falls back to earliest available slots
 priority: P1
 category: slot-recovery
 needs_fresh_uin: false
@@ -29,11 +29,7 @@ user_script:
   - speaker: user
     text: Yes.
   - speaker: user
-    text: I've been getting migraines and headaches.
-  - speaker: user
-    text: Seven.
-  - speaker: user
-    text: They keep coming back and light makes them worse.
+    text: I've been getting migraines and headaches that keep coming back, and light makes them worse.
   - speaker: user
     text: No specialist preference.
   - speaker: user
@@ -70,6 +66,7 @@ must_do:
 must_not_do:
   - Stop at a dead-end "no slots" response.
   - Ask the patient to restate the same preference before offering fallback slots.
+  - Ask for a severity rating before triage.
   - Present more than three fallback slot options at once.
 
 failure_signals:

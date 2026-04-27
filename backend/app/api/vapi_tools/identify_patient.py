@@ -11,15 +11,25 @@ router = APIRouter()
 
 
 _WORD_TO_DIGIT = {
-    "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
-    "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9",
-    "oh": "0", "o": "0",
+    "zero": "0",
+    "one": "1",
+    "two": "2",
+    "three": "3",
+    "four": "4",
+    "five": "5",
+    "six": "6",
+    "seven": "7",
+    "eight": "8",
+    "nine": "9",
+    "oh": "0",
+    "o": "0",
 }
 
 
 def _normalize_uin(raw: str) -> str:
     """Convert spoken UIN like 'one two three ...' or '1-2-3-...' to pure digits."""
     import re
+
     raw = raw.strip().lower()
     # Replace word digits with numeric digits
     for word, digit in _WORD_TO_DIGIT.items():
@@ -56,7 +66,13 @@ def _lookup_patient(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, 
         return _invalid_uin_result(uin, action="look up your record")
 
     sb = get_supabase()
-    res = sb.table("patients").select("id,uin,full_name,phone,email,allergies").eq("uin", uin).limit(1).execute()
+    res = (
+        sb.table("patients")
+        .select("id,uin,full_name,phone,email,allergies")
+        .eq("uin", uin)
+        .limit(1)
+        .execute()
+    )
     data = getattr(res, "data", None) or []
 
     if not data:
@@ -88,14 +104,26 @@ def _register_patient(args: dict[str, Any], payload: dict[str, Any]) -> dict[str
     if not uin or len(uin) != 9 or not uin.isdigit():
         return _invalid_uin_result(uin, action="register you")
     if not full_name:
-        return {"status": "INVALID", "message": "I need your full name to register you."}
+        return {
+            "status": "INVALID",
+            "message": "I need your full name to register you.",
+        }
     if not phone:
-        return {"status": "INVALID", "message": "I need a valid phone number to register you."}
+        return {
+            "status": "INVALID",
+            "message": "I need a valid phone number to register you.",
+        }
 
     sb = get_supabase()
 
     # Check if UIN already exists
-    existing_uin = sb.table("patients").select("id,uin,full_name").eq("uin", uin).limit(1).execute()
+    existing_uin = (
+        sb.table("patients")
+        .select("id,uin,full_name")
+        .eq("uin", uin)
+        .limit(1)
+        .execute()
+    )
     existing_uin_data = getattr(existing_uin, "data", None) or []
     if existing_uin_data:
         p = existing_uin_data[0]
@@ -118,7 +146,10 @@ def _register_patient(args: dict[str, Any], payload: dict[str, Any]) -> dict[str
     res = sb.table("patients").insert(row).execute()
     ins = getattr(res, "data", None) or []
     if not ins:
-        return {"status": "ERROR", "message": "Something went wrong during registration. Please try again."}
+        return {
+            "status": "ERROR",
+            "message": "Something went wrong during registration. Please try again.",
+        }
 
     patient = ins[0]
     return {

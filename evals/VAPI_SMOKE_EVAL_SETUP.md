@@ -159,36 +159,18 @@ Use this exact turn order:
     Check that the assistant briefly acknowledges registration and immediately continues into symptom collection. It must not reset with `What can I help you with today?`
 
 17. `User`
-    `I have a rash on both arms and it's really itchy.`
+    `I have a rash on both arms and it's really itchy, irritated, and spreading.`
 
 18. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
-    Check that the assistant asks for a 1-to-10 severity rating.
+    Check that the assistant asks about specialist preference without asking for a severity rating.
 
 19. `User`
-    `Four.`
-
-20. `Assistant`
-    `Mock`: off
-    `Evaluation`: on
-    `Approach`: `LLM-as-a-judge`
-    Check that the assistant asks the patient to describe in their own words how bad it feels.
-
-21. `User`
-    `It feels irritated and keeps spreading.`
-
-22. `Assistant`
-    `Mock`: off
-    `Evaluation`: on
-    `Approach`: `LLM-as-a-judge`
-    Check that the assistant asks about specialist preference.
-
-23. `User`
     `I don't have a specialist in mind.`
 
-24. `Assistant`
+20. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
@@ -272,10 +254,8 @@ Use this exact turn order:
 5. `My name is Maya Chen.`
 6. `My phone number is zero four two three three four nine four three five.`
 7. `Yes.`
-8. `I have a rash on both arms and it's really itchy.`
-9. `Four.`
-10. `It feels irritated and keeps spreading.`
-11. `I don't have a specialist in mind.`
+8. `I have a rash on both arms and it's really itchy, irritated, and spreading.`
+9. `I don't have a specialist in mind.`
 12. `That sounds right.`
 13. `Next week.`
 14. `Morning.`
@@ -450,11 +430,11 @@ After Turn 18:
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
 
 PASS if ALL are true:
-- The assistant asks for a 1-to-10 severity rating after symptoms are collected.
+- The assistant asks about specialist preference after symptoms are collected.
 - The assistant asks one question at a time.
 
 FAIL if ANY are true:
-- The assistant skips the severity-rating question.
+- The assistant asks for a severity rating or pain score.
 - The assistant asks an unrelated question instead.
 
 Output exactly one word: pass or fail.
@@ -466,11 +446,11 @@ After Turn 20:
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
 
 PASS if ALL are true:
-- The assistant asks the patient to describe in their own words how bad it feels.
+- The assistant moves on to triage after symptoms and specialist preference are collected.
 - The assistant stays in the symptom-collection flow.
 
 FAIL if ANY are true:
-- The assistant skips the severity-description question.
+- The assistant asks an extra severity or impact question.
 - The assistant jumps ahead to triage or scheduling too early.
 
 Output exactly one word: pass or fail.
@@ -907,36 +887,18 @@ Use this exact turn order:
     Check that the assistant starts symptom collection by asking about symptoms.
 
 15. `User`
-    `I've been having stomach pain and nausea.`
+    `I've been having stomach pain and nausea on and off for a few days.`
 
 16. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
-    Check that the assistant asks for the 1-to-10 severity rating.
+    Check that the assistant asks about specialist preference without asking for a severity rating.
 
 17. `User`
-    `Six.`
-
-18. `Assistant`
-    `Mock`: off
-    `Evaluation`: on
-    `Approach`: `LLM-as-a-judge`
-    Check that the assistant asks the patient to describe in their own words how bad it feels.
-
-19. `User`
-    `It's been on and off for a few days.`
-
-20. `Assistant`
-    `Mock`: off
-    `Evaluation`: on
-    `Approach`: `LLM-as-a-judge`
-    Check that the assistant asks about specialist preference.
-
-21. `User`
     `No specialist preference.`
 
-22. `Assistant`
+18. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
@@ -1018,10 +980,8 @@ Use this exact turn order:
 3. `My UIN is two three four five six seven eight nine zero.`
 4. `Yes.`
 5. `This is for a new concern.`
-6. `I've been having stomach pain and nausea.`
-7. `Six.`
-8. `It's been on and off for a few days.`
-9. `No specialist preference.`
+6. `I've been having stomach pain and nausea on and off for a few days.`
+7. `No specialist preference.`
 10. `That sounds right.`
 11. `Next week.`
 12. `Afternoon.`
@@ -1171,11 +1131,11 @@ After Turn 16:
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
 
 PASS if ALL are true:
-- The assistant asks for a 1-to-10 severity rating after symptoms are collected.
+- The assistant asks about specialist preference after symptoms are collected.
 - The assistant asks one question at a time.
 
 FAIL if ANY are true:
-- The assistant skips the severity-rating question.
+- The assistant asks for a severity rating or pain score.
 - The assistant asks an unrelated question instead.
 
 Output exactly one word: pass or fail.
@@ -1187,11 +1147,11 @@ After Turn 18:
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
 
 PASS if ALL are true:
-- The assistant asks the patient to describe in their own words how bad it feels.
+- The assistant moves on to triage after symptoms and specialist preference are collected.
 - The assistant stays in the symptom-collection flow.
 
 FAIL if ANY are true:
-- The assistant skips the severity-description question.
+- The assistant asks an extra severity or impact question.
 - The assistant jumps ahead to triage or scheduling too early.
 
 Output exactly one word: pass or fail.
@@ -1395,36 +1355,18 @@ Use this exact turn order:
     Check that the assistant starts symptom collection by asking about symptoms.
 
 15. `User`
-    `I've been getting migraines and headaches.`
+    `I've been getting migraines and headaches that keep coming back, and light makes them worse.`
 
 16. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
-    Check that the assistant asks for the 1-to-10 severity rating.
+    Check that the assistant asks about specialist preference without asking for a severity rating.
 
 17. `User`
-    `Seven.`
-
-18. `Assistant`
-    `Mock`: off
-    `Evaluation`: on
-    `Approach`: `LLM-as-a-judge`
-    Check that the assistant asks the patient to describe in their own words how bad it feels.
-
-19. `User`
-    `They keep coming back and light makes them worse.`
-
-20. `Assistant`
-    `Mock`: off
-    `Evaluation`: on
-    `Approach`: `LLM-as-a-judge`
-    Check that the assistant asks about specialist preference.
-
-21. `User`
     `No specialist preference.`
 
-22. `Assistant`
+18. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
@@ -1484,10 +1426,8 @@ Use this exact turn order:
 2. `I've been there before.`
 3. `My UIN is three four five six seven eight nine zero one.`
 4. `Yes.`
-5. `I've been getting migraines and headaches.`
-6. `Seven.`
-7. `They keep coming back and light makes them worse.`
-8. `No specialist preference.`
+5. `I've been getting migraines and headaches that keep coming back, and light makes them worse.`
+6. `No specialist preference.`
 9. `As soon as possible.`
 10. `Morning.`
 
@@ -1629,11 +1569,11 @@ After Turn 16:
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
 
 PASS if ALL are true:
-- The assistant asks for a 1-to-10 severity rating after symptoms are collected.
+- The assistant asks about specialist preference after symptoms are collected.
 - The assistant asks one question at a time.
 
 FAIL if ANY are true:
-- The assistant skips the severity-rating question.
+- The assistant asks for a severity rating or pain score.
 - The assistant asks an unrelated question instead.
 
 Output exactly one word: pass or fail.
@@ -1645,11 +1585,11 @@ After Turn 18:
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
 
 PASS if ALL are true:
-- The assistant asks the patient to describe in their own words how bad it feels.
+- The assistant moves on to triage after symptoms and specialist preference are collected.
 - The assistant stays in the symptom-collection flow.
 
 FAIL if ANY are true:
-- The assistant skips the severity-description question.
+- The assistant asks an extra severity or impact question.
 - The assistant jumps ahead to triage or scheduling too early.
 
 Output exactly one word: pass or fail.
@@ -1855,36 +1795,18 @@ Use this exact turn order:
     Check that the assistant starts symptom collection by asking about symptoms.
 
 15. `User`
-    `I've been having stomach pain and nausea.`
+    `I've been having stomach pain and nausea on and off for a few days.`
 
 16. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
-    Check that the assistant asks for the 1-to-10 severity rating.
+    Check that the assistant asks about specialist preference without asking for a severity rating.
 
 17. `User`
-    `Six.`
-
-18. `Assistant`
-    `Mock`: off
-    `Evaluation`: on
-    `Approach`: `LLM-as-a-judge`
-    Check that the assistant asks the patient to describe in their own words how bad it feels.
-
-19. `User`
-    `It's been on and off for a few days.`
-
-20. `Assistant`
-    `Mock`: off
-    `Evaluation`: on
-    `Approach`: `LLM-as-a-judge`
-    Check that the assistant asks about specialist preference.
-
-21. `User`
     `No specialist preference.`
 
-22. `Assistant`
+18. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`

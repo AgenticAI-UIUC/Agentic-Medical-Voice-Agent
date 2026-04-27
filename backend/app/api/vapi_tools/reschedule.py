@@ -13,7 +13,11 @@ from app.api.vapi_helpers import (
     handle_tool_calls,
     is_valid_uuid,
 )
-from app.services.slot_engine import find_slots_for_specialty, validate_slot, is_next_available_request
+from app.services.slot_engine import (
+    find_slots_for_specialty,
+    validate_slot,
+    is_next_available_request,
+)
 from app.services.time_utils import format_for_voice, now_utc, parse_time_bucket
 from app.supabase import get_supabase
 
@@ -27,16 +31,24 @@ def _format_start(start_at: str) -> str:
 def _parse_start(start_at: str) -> datetime:
     return datetime.fromisoformat(start_at.replace("Z", "+00:00"))
 
+
 router = APIRouter()
 
 
 def _should_retry_with_any(preferred_day: str, preferred_time: str) -> bool:
-    return is_next_available_request(preferred_day) and parse_time_bucket(preferred_time) != "any"
+    return (
+        is_next_available_request(preferred_day)
+        and parse_time_bucket(preferred_time) != "any"
+    )
 
 
-def _relaxed_reschedule_message(preferred_time: str, slots: list[dict[str, Any]]) -> str:
+def _relaxed_reschedule_message(
+    preferred_time: str, slots: list[dict[str, Any]]
+) -> str:
     labels = [s["label"] for s in slots[:3]]
-    spoken = labels[0] if len(labels) == 1 else ", ".join(labels[:-1]) + " or " + labels[-1]
+    spoken = (
+        labels[0] if len(labels) == 1 else ", ".join(labels[:-1]) + " or " + labels[-1]
+    )
     bucket = parse_time_bucket(preferred_time)
     bucket_text = "morning" if bucket == "morning" else "afternoon"
     return (
@@ -45,11 +57,16 @@ def _relaxed_reschedule_message(preferred_time: str, slots: list[dict[str, Any]]
     )
 
 
-def _handle_find_appointment(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+def _handle_find_appointment(
+    args: dict[str, Any], payload: dict[str, Any]
+) -> dict[str, Any]:
     """Find a patient's existing appointment for rescheduling or cancellation."""
     patient_id = coerce_string(args.get("patient_id"))
     if not patient_id:
-        return {"status": "INVALID", "message": "I need your patient information first."}
+        return {
+            "status": "INVALID",
+            "message": "I need your patient information first.",
+        }
 
     doctor_name = coerce_string(args.get("doctor_name")).lower()
     reason = coerce_string(args.get("reason")).lower()
@@ -59,7 +76,9 @@ def _handle_find_appointment(args: dict[str, Any], payload: dict[str, Any]) -> d
 
     query = (
         sb.table("appointments")
-        .select("id,doctor_id,specialty_id,start_at,end_at,reason,symptoms,status,doctors(full_name)")
+        .select(
+            "id,doctor_id,specialty_id,start_at,end_at,reason,symptoms,status,doctors(full_name)"
+        )
         .eq("patient_id", patient_id)
         .order("start_at", desc=True)
         .limit(20)
@@ -71,14 +90,13 @@ def _handle_find_appointment(args: dict[str, Any], payload: dict[str, Any]) -> d
 
     if include_past:
         appointments = [
-            a for a in appointments
-            if a.get("status") in {"CONFIRMED", "COMPLETED"}
+            a for a in appointments if a.get("status") in {"CONFIRMED", "COMPLETED"}
         ]
     else:
         appointments = [
-            a for a in appointments
-            if a.get("status") == "CONFIRMED"
-            and _parse_start(a["start_at"]) >= now
+            a
+            for a in appointments
+            if a.get("status") == "CONFIRMED" and _parse_start(a["start_at"]) >= now
         ]
 
     if not appointments:
@@ -95,13 +113,16 @@ def _handle_find_appointment(args: dict[str, Any], payload: dict[str, Any]) -> d
     matches = appointments
     if doctor_name:
         matches = [
-            a for a in matches
+            a
+            for a in matches
             if doctor_name in (a.get("doctors", {}).get("full_name", "") or "").lower()
         ]
     if reason:
         matches = [
-            a for a in matches
-            if reason in (a.get("reason") or "").lower() or reason in (a.get("symptoms") or "").lower()
+            a
+            for a in matches
+            if reason in (a.get("reason") or "").lower()
+            or reason in (a.get("symptoms") or "").lower()
         ]
 
     if not matches:
@@ -132,13 +153,15 @@ def _handle_find_appointment(args: dict[str, Any], payload: dict[str, Any]) -> d
     for a in matches[:5]:
         doc_name = a.get("doctors", {}).get("full_name", "Unknown")
         label = _format_start(a["start_at"])
-        options.append({
-            "id": a["id"],
-            "doctor_name": doc_name,
-            "start_at": a["start_at"],
-            "label": label,
-            "reason": a.get("reason"),
-        })
+        options.append(
+            {
+                "id": a["id"],
+                "doctor_name": doc_name,
+                "start_at": a["start_at"],
+                "label": label,
+                "reason": a.get("reason"),
+            }
+        )
 
     return {
         "status": "MULTIPLE",
@@ -155,10 +178,16 @@ def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
     preferred_time = coerce_string(args.get("preferred_time"))
 
     if not appointment_id:
-        return {"status": "INVALID", "message": "I need to know which appointment to reschedule."}
+        return {
+            "status": "INVALID",
+            "message": "I need to know which appointment to reschedule.",
+        }
 
     if not is_valid_uuid(appointment_id):
-        return {"status": "INVALID", "message": "The appointment ID is not valid. Please try finding the appointment again."}
+        return {
+            "status": "INVALID",
+            "message": "The appointment ID is not valid. Please try finding the appointment again.",
+        }
 
     sb = get_supabase()
 
@@ -179,7 +208,10 @@ def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
     appt = data[0]
     resolved_patient_id = patient_id or appt.get("patient_id")
     if appt["status"] != "CONFIRMED":
-        return {"status": "INVALID", "message": "That appointment isn't active and can't be rescheduled."}
+        return {
+            "status": "INVALID",
+            "message": "That appointment isn't active and can't be rescheduled.",
+        }
 
     specialty_id = appt.get("specialty_id")
     doctor_id = appt["doctor_id"]
@@ -189,6 +221,7 @@ def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
         slots = find_slots_for_specialty(specialty_id, preferred_day, preferred_time)
     else:
         from app.services.slot_engine import find_available_slots
+
         slots = find_available_slots(doctor_id, preferred_day, preferred_time)
         for s in slots:
             s["doctor_id"] = doctor_id
@@ -198,6 +231,7 @@ def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
             slots = find_slots_for_specialty(specialty_id, preferred_day, "any")
         else:
             from app.services.slot_engine import find_available_slots
+
             slots = find_available_slots(doctor_id, preferred_day, "any")
             for s in slots:
                 s["doctor_id"] = doctor_id
@@ -220,7 +254,9 @@ def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
         }
 
     labels = [s["label"] for s in slots[:3]]
-    spoken = labels[0] if len(labels) == 1 else ", ".join(labels[:-1]) + " or " + labels[-1]
+    spoken = (
+        labels[0] if len(labels) == 1 else ", ".join(labels[:-1]) + " or " + labels[-1]
+    )
     return {
         "status": "SLOTS_AVAILABLE",
         "original_appointment_id": appointment_id,
@@ -230,7 +266,9 @@ def _handle_reschedule(args: dict[str, Any], payload: dict[str, Any]) -> dict[st
     }
 
 
-def _handle_reschedule_finalize(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+def _handle_reschedule_finalize(
+    args: dict[str, Any], payload: dict[str, Any]
+) -> dict[str, Any]:
     """Atomically book a new slot and cancel the original appointment via a single DB transaction."""
     original_appointment_id = coerce_string(args.get("original_appointment_id"))
     patient_id = coerce_string(args.get("patient_id"))
@@ -239,22 +277,37 @@ def _handle_reschedule_finalize(args: dict[str, Any], payload: dict[str, Any]) -
     end_at = coerce_string(args.get("end_at"))
 
     if not all([original_appointment_id, patient_id, doctor_id, start_at, end_at]):
-        return {"status": "INVALID", "message": "Missing required rescheduling information."}
+        return {
+            "status": "INVALID",
+            "message": "Missing required rescheduling information.",
+        }
 
-    for id_field, id_val in [("original_appointment_id", original_appointment_id),
-                              ("patient_id", patient_id), ("doctor_id", doctor_id)]:
+    for id_field, id_val in [
+        ("original_appointment_id", original_appointment_id),
+        ("patient_id", patient_id),
+        ("doctor_id", doctor_id),
+    ]:
         if not is_valid_uuid(id_val):
-            return {"status": "INVALID", "message": f"The {id_field} is not valid. Please try again."}
+            return {
+                "status": "INVALID",
+                "message": f"The {id_field} is not valid. Please try again.",
+            }
 
     # Parse start/end times
     try:
         start_dt = datetime.fromisoformat(start_at.replace("Z", "+00:00"))
         end_dt = datetime.fromisoformat(end_at.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
-        return {"status": "INVALID", "message": "I couldn't understand the appointment time."}
+        return {
+            "status": "INVALID",
+            "message": "I couldn't understand the appointment time.",
+        }
 
     if start_dt >= end_dt:
-        return {"status": "INVALID", "message": "The appointment end time must be after the start time."}
+        return {
+            "status": "INVALID",
+            "message": "The appointment end time must be after the start time.",
+        }
 
     # Validate that the new slot is real doctor availability
     slot_error = validate_slot(doctor_id, start_dt, end_dt)
@@ -266,19 +319,26 @@ def _handle_reschedule_finalize(args: dict[str, Any], payload: dict[str, Any]) -
     # Fetch original appointment metadata (for fields to carry over)
     res = (
         sb.table("appointments")
-        .select("id,specialty_id,reason,symptoms,severity_description,severity_rating,urgency")
+        .select(
+            "id,specialty_id,reason,symptoms,severity_description,severity_rating,urgency"
+        )
         .eq("id", original_appointment_id)
         .limit(1)
         .execute()
     )
     data = getattr(res, "data", None) or []
     if not data:
-        return {"status": "NOT_FOUND", "message": "I couldn't find the original appointment."}
+        return {
+            "status": "NOT_FOUND",
+            "message": "I couldn't find the original appointment.",
+        }
 
     original = data[0]
 
     # Get doctor name
-    doc_res = sb.table("doctors").select("full_name").eq("id", doctor_id).limit(1).execute()
+    doc_res = (
+        sb.table("doctors").select("full_name").eq("id", doctor_id).limit(1).execute()
+    )
     doc_data = getattr(doc_res, "data", None) or []
     doctor_name = doc_data[0]["full_name"] if doc_data else "your doctor"
 
@@ -291,7 +351,8 @@ def _handle_reschedule_finalize(args: dict[str, Any], payload: dict[str, Any]) -
         "p_doctor_id": doctor_id,
         "p_start_at": start_at,
         "p_end_at": end_at,
-        "p_specialty_id": coerce_string(args.get("specialty_id")) or original.get("specialty_id"),
+        "p_specialty_id": coerce_string(args.get("specialty_id"))
+        or original.get("specialty_id"),
         "p_reason": coerce_string(args.get("reason")) or original.get("reason"),
         "p_symptoms": original.get("symptoms"),
         "p_severity_description": original.get("severity_description"),
@@ -312,19 +373,37 @@ def _handle_reschedule_finalize(args: dict[str, Any], payload: dict[str, Any]) -
 
     rpc_data = getattr(rpc_res, "data", None)
     if not rpc_data:
-        return {"status": "ERROR", "message": "Something went wrong with the reschedule."}
+        return {
+            "status": "ERROR",
+            "message": "Something went wrong with the reschedule.",
+        }
 
-    result = rpc_data if isinstance(rpc_data, dict) else rpc_data[0] if isinstance(rpc_data, list) else {}
+    result = (
+        rpc_data
+        if isinstance(rpc_data, dict)
+        else rpc_data[0]
+        if isinstance(rpc_data, list)
+        else {}
+    )
     status = result.get("status")
 
     if status == "NOT_FOUND":
-        return {"status": "NOT_FOUND", "message": "I couldn't find the original appointment."}
+        return {
+            "status": "NOT_FOUND",
+            "message": "I couldn't find the original appointment.",
+        }
 
     if status == "NOT_ACTIVE":
-        return {"status": "INVALID", "message": "The original appointment is no longer active."}
+        return {
+            "status": "INVALID",
+            "message": "The original appointment is no longer active.",
+        }
 
     if status != "RESCHEDULED":
-        return {"status": "ERROR", "message": "Something went wrong with the reschedule."}
+        return {
+            "status": "ERROR",
+            "message": "Something went wrong with the reschedule.",
+        }
 
     when = format_for_voice(start_dt)
     return {

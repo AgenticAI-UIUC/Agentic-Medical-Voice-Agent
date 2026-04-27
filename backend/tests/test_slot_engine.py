@@ -37,7 +37,9 @@ def test_generate_theoretical_slots_builds_utc_slots_from_local_availability() -
     ]
 
 
-def test_find_available_slots_filters_past_booked_and_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_find_available_slots_filters_past_booked_and_blocked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fixed_now = datetime(2026, 4, 6, 14, 30, tzinfo=timezone.utc)
     theoretical_slots = [
         (
@@ -63,7 +65,9 @@ def test_find_available_slots_filters_past_booked_and_blocked(monkeypatch: pytes
     ]
 
     monkeypatch.setattr(slot_engine, "now_utc", lambda: fixed_now)
-    monkeypatch.setattr(slot_engine, "_fetch_availability", lambda doctor_id: [{"configured": True}])
+    monkeypatch.setattr(
+        slot_engine, "_fetch_availability", lambda doctor_id: [{"configured": True}]
+    )
     monkeypatch.setattr(
         slot_engine,
         "_fetch_booked",
@@ -81,10 +85,14 @@ def test_find_available_slots_filters_past_booked_and_blocked(monkeypatch: pytes
             )
         ],
     )
-    monkeypatch.setattr(slot_engine, "_generate_theoretical_slots", lambda *args: theoretical_slots)
+    monkeypatch.setattr(
+        slot_engine, "_generate_theoretical_slots", lambda *args: theoretical_slots
+    )
     monkeypatch.setattr(slot_engine, "format_for_voice", lambda dt: f"slot-{dt.hour}")
 
-    slots = slot_engine.find_available_slots("doc-1", "next available", "any", max_slots=2)
+    slots = slot_engine.find_available_slots(
+        "doc-1", "next available", "any", max_slots=2
+    )
 
     assert slots == [
         {
@@ -120,13 +128,23 @@ def test_find_available_slots_treats_as_soon_as_possible_as_next_available(
     ]
 
     monkeypatch.setattr(slot_engine, "now_utc", lambda: fixed_now)
-    monkeypatch.setattr(slot_engine, "_fetch_availability", lambda doctor_id: [{"configured": True}])
-    monkeypatch.setattr(slot_engine, "_fetch_booked", lambda doctor_id, start_utc, end_utc: set())
-    monkeypatch.setattr(slot_engine, "_fetch_blocks", lambda doctor_id, start_utc, end_utc: [])
-    monkeypatch.setattr(slot_engine, "_generate_theoretical_slots", lambda *args: theoretical_slots)
+    monkeypatch.setattr(
+        slot_engine, "_fetch_availability", lambda doctor_id: [{"configured": True}]
+    )
+    monkeypatch.setattr(
+        slot_engine, "_fetch_booked", lambda doctor_id, start_utc, end_utc: set()
+    )
+    monkeypatch.setattr(
+        slot_engine, "_fetch_blocks", lambda doctor_id, start_utc, end_utc: []
+    )
+    monkeypatch.setattr(
+        slot_engine, "_generate_theoretical_slots", lambda *args: theoretical_slots
+    )
     monkeypatch.setattr(slot_engine, "format_for_voice", lambda dt: f"slot-{dt.hour}")
 
-    slots = slot_engine.find_available_slots("doc-1", "as soon as possible, please", "morning", max_slots=2)
+    slots = slot_engine.find_available_slots(
+        "doc-1", "as soon as possible, please", "morning", max_slots=2
+    )
 
     assert slots == [
         {
@@ -142,11 +160,22 @@ def test_find_available_slots_treats_as_soon_as_possible_as_next_available(
     ]
 
 
-def test_find_slots_for_specialty_combines_active_doctors_and_sorts(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_find_slots_for_specialty_combines_active_doctors_and_sorts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     specialty_rows = [
-        {"doctor_id": "doc-b", "doctors": {"id": "doc-b", "full_name": "Dr. Beta", "is_active": True}},
-        {"doctor_id": "doc-c", "doctors": {"id": "doc-c", "full_name": "Dr. Closed", "is_active": False}},
-        {"doctor_id": "doc-a", "doctors": {"id": "doc-a", "full_name": "Dr. Alpha", "is_active": True}},
+        {
+            "doctor_id": "doc-b",
+            "doctors": {"id": "doc-b", "full_name": "Dr. Beta", "is_active": True},
+        },
+        {
+            "doctor_id": "doc-c",
+            "doctors": {"id": "doc-c", "full_name": "Dr. Closed", "is_active": False},
+        },
+        {
+            "doctor_id": "doc-a",
+            "doctors": {"id": "doc-a", "full_name": "Dr. Alpha", "is_active": True},
+        },
     ]
     sb = MockSupabase(tables={"doctor_specialties": [MockQuery(data=specialty_rows)]})
     monkeypatch.setattr(slot_engine, "get_supabase", lambda: sb)
@@ -158,14 +187,28 @@ def test_find_slots_for_specialty_combines_active_doctors_and_sorts(monkeypatch:
         max_slots: int = 5,
     ) -> list[dict[str, str]]:
         if doctor_id == "doc-a":
-            return [{"start_at": "2026-04-06T20:00:00+00:00", "end_at": "2026-04-06T21:00:00+00:00", "label": "late"}]
+            return [
+                {
+                    "start_at": "2026-04-06T20:00:00+00:00",
+                    "end_at": "2026-04-06T21:00:00+00:00",
+                    "label": "late",
+                }
+            ]
         if doctor_id == "doc-b":
-            return [{"start_at": "2026-04-06T18:00:00+00:00", "end_at": "2026-04-06T19:00:00+00:00", "label": "early"}]
+            return [
+                {
+                    "start_at": "2026-04-06T18:00:00+00:00",
+                    "end_at": "2026-04-06T19:00:00+00:00",
+                    "label": "early",
+                }
+            ]
         return []
 
     monkeypatch.setattr(slot_engine, "find_available_slots", fake_find_available_slots)
 
-    slots = slot_engine.find_slots_for_specialty("cardiology", "today", "any", max_slots=5)
+    slots = slot_engine.find_slots_for_specialty(
+        "cardiology", "today", "any", max_slots=5
+    )
 
     assert slots == [
         {
@@ -206,7 +249,9 @@ def test_validate_slot_enforces_time_guards(
     end_dt: datetime,
     expected: str,
 ) -> None:
-    monkeypatch.setattr(slot_engine, "now_utc", lambda: datetime(2026, 4, 6, 14, 0, tzinfo=timezone.utc))
+    monkeypatch.setattr(
+        slot_engine, "now_utc", lambda: datetime(2026, 4, 6, 14, 0, tzinfo=timezone.utc)
+    )
 
     def fail_get_supabase() -> None:
         raise AssertionError("validate_slot should stop before database access")
@@ -216,8 +261,12 @@ def test_validate_slot_enforces_time_guards(
     assert slot_engine.validate_slot("doc-1", start_dt, end_dt) == expected
 
 
-def test_validate_slot_returns_overlap_error_for_confirmed_appointment(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(slot_engine, "now_utc", lambda: datetime(2026, 4, 6, 14, 0, tzinfo=timezone.utc))
+def test_validate_slot_returns_overlap_error_for_confirmed_appointment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        slot_engine, "now_utc", lambda: datetime(2026, 4, 6, 14, 0, tzinfo=timezone.utc)
+    )
     monkeypatch.setattr(
         slot_engine,
         "_fetch_availability",
@@ -231,7 +280,9 @@ def test_validate_slot_returns_overlap_error_for_confirmed_appointment(monkeypat
             }
         ],
     )
-    monkeypatch.setattr(slot_engine, "_fetch_blocks", lambda doctor_id, start_dt, end_dt: [])
+    monkeypatch.setattr(
+        slot_engine, "_fetch_blocks", lambda doctor_id, start_dt, end_dt: []
+    )
 
     sb = MockSupabase(
         tables={
@@ -250,8 +301,12 @@ def test_validate_slot_returns_overlap_error_for_confirmed_appointment(monkeypat
     assert error == "That slot is already booked."
 
 
-def test_validate_slot_accepts_valid_available_slot(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(slot_engine, "now_utc", lambda: datetime(2026, 4, 6, 14, 0, tzinfo=timezone.utc))
+def test_validate_slot_accepts_valid_available_slot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        slot_engine, "now_utc", lambda: datetime(2026, 4, 6, 14, 0, tzinfo=timezone.utc)
+    )
     monkeypatch.setattr(
         slot_engine,
         "_fetch_availability",
@@ -265,7 +320,9 @@ def test_validate_slot_accepts_valid_available_slot(monkeypatch: pytest.MonkeyPa
             }
         ],
     )
-    monkeypatch.setattr(slot_engine, "_fetch_blocks", lambda doctor_id, start_dt, end_dt: [])
+    monkeypatch.setattr(
+        slot_engine, "_fetch_blocks", lambda doctor_id, start_dt, end_dt: []
+    )
 
     sb = MockSupabase(
         tables={
@@ -275,8 +332,11 @@ def test_validate_slot_accepts_valid_available_slot(monkeypatch: pytest.MonkeyPa
     )
     monkeypatch.setattr(slot_engine, "get_supabase", lambda: sb)
 
-    assert slot_engine.validate_slot(
-        "doc-1",
-        datetime(2026, 4, 6, 16, 0, tzinfo=timezone.utc),
-        datetime(2026, 4, 6, 17, 0, tzinfo=timezone.utc),
-    ) is None
+    assert (
+        slot_engine.validate_slot(
+            "doc-1",
+            datetime(2026, 4, 6, 16, 0, tzinfo=timezone.utc),
+            datetime(2026, 4, 6, 17, 0, tzinfo=timezone.utc),
+        )
+        is None
+    )

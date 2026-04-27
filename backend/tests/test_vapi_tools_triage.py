@@ -4,7 +4,9 @@ from app.api.vapi_tools import triage
 from app.services.triage_engine import TriageResult
 
 
-def test_handle_list_specialties_recommends_general_practice_when_available(monkeypatch) -> None:
+def test_handle_list_specialties_recommends_general_practice_when_available(
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(
         triage,
         "get_all_specialties",
@@ -21,7 +23,9 @@ def test_handle_list_specialties_recommends_general_practice_when_available(monk
     assert "guide you to a specialist if needed" in result["message"]
 
 
-def test_handle_list_specialties_falls_back_to_generic_message_without_gp(monkeypatch) -> None:
+def test_handle_list_specialties_falls_back_to_generic_message_without_gp(
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(
         triage,
         "get_all_specialties",
@@ -34,7 +38,10 @@ def test_handle_list_specialties_falls_back_to_generic_message_without_gp(monkey
     result = triage._handle_list_specialties({}, {})
 
     assert result["status"] == "OK"
-    assert result["message"] == "We have specialists in: Neurology, Dermatology. Which would you prefer?"
+    assert (
+        result["message"]
+        == "We have specialists in: Neurology, Dermatology. Which would you prefer?"
+    )
 
 
 def test_handle_triage_normalizes_non_string_inputs(monkeypatch) -> None:

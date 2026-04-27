@@ -7,7 +7,6 @@ from fastapi import APIRouter, Request
 
 from app.api.vapi_helpers import (
     coerce_allowed_string,
-    coerce_optional_int,
     coerce_string,
     get_call_id,
     handle_tool_calls,
@@ -34,10 +33,16 @@ def _handle_book(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any
         start_dt = datetime.fromisoformat(start_at.replace("Z", "+00:00"))
         end_dt = datetime.fromisoformat(end_at.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
-        return {"status": "INVALID", "message": "I couldn't understand those appointment times. Could you try again?"}
+        return {
+            "status": "INVALID",
+            "message": "I couldn't understand those appointment times. Could you try again?",
+        }
 
     if start_dt >= end_dt:
-        return {"status": "INVALID", "message": "The appointment end time must be after the start time."}
+        return {
+            "status": "INVALID",
+            "message": "The appointment end time must be after the start time.",
+        }
 
     # Validate that the slot is real doctor availability
     slot_error = validate_slot(doctor_id, start_dt, end_dt)
@@ -48,12 +53,16 @@ def _handle_book(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any
     vapi_call_id = get_call_id(payload)
 
     # Get doctor name for confirmation message
-    doc_res = sb.table("doctors").select("full_name").eq("id", doctor_id).limit(1).execute()
+    doc_res = (
+        sb.table("doctors").select("full_name").eq("id", doctor_id).limit(1).execute()
+    )
     doc_data = getattr(doc_res, "data", None) or []
     doctor_name = doc_data[0]["full_name"] if doc_data else "your doctor"
 
-    severity_rating = coerce_optional_int(args.get("severity_rating"), minimum=1, maximum=10)
-    urgency = coerce_allowed_string(args.get("urgency"), _ALLOWED_URGENCY, default="ROUTINE") or "ROUTINE"
+    urgency = (
+        coerce_allowed_string(args.get("urgency"), _ALLOWED_URGENCY, default="ROUTINE")
+        or "ROUTINE"
+    )
 
     row: dict[str, Any] = {
         "patient_id": patient_id,
@@ -64,8 +73,8 @@ def _handle_book(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any
         "follow_up_from_id": coerce_string(args.get("follow_up_from_id")) or None,
         "reason": coerce_string(args.get("reason")) or None,
         "symptoms": coerce_string(args.get("symptoms")) or None,
-        "severity_description": coerce_string(args.get("severity_description")) or None,
-        "severity_rating": severity_rating,
+        "severity_description": None,
+        "severity_rating": None,
         "urgency": urgency,
         "status": "CONFIRMED",
         "vapi_call_id": vapi_call_id,
@@ -84,7 +93,10 @@ def _handle_book(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any
 
     ins = getattr(res, "data", None) or []
     if not ins:
-        return {"status": "ERROR", "message": "Something went wrong booking your appointment."}
+        return {
+            "status": "ERROR",
+            "message": "Something went wrong booking your appointment.",
+        }
 
     appointment = ins[0]
     when = format_for_voice(start_dt)

@@ -15,51 +15,75 @@ from app.supabase import get_supabase
 # to call 911 unnecessarily.
 _RED_FLAG_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # Cardiac
-    (re.compile(
-        r"chest\s+pain|chest\s+tight|chest\s+pressure|crushing\s+chest"
-        r"|heart\s+attack|cardiac\s+arrest",
-        re.IGNORECASE,
-    ), "cardiac emergency"),
+    (
+        re.compile(
+            r"chest\s+pain|chest\s+tight|chest\s+pressure|crushing\s+chest"
+            r"|heart\s+attack|cardiac\s+arrest",
+            re.IGNORECASE,
+        ),
+        "cardiac emergency",
+    ),
     # Stroke
-    (re.compile(
-        r"stroke|face\s+droop|slurred?\s+speech|sudden\s+(numb|weak)"
-        r"|can\s*'?t\s+move\s+(arm|leg|side)",
-        re.IGNORECASE,
-    ), "possible stroke"),
+    (
+        re.compile(
+            r"stroke|face\s+droop|slurred?\s+speech|sudden\s+(numb|weak)"
+            r"|can\s*'?t\s+move\s+(arm|leg|side)",
+            re.IGNORECASE,
+        ),
+        "possible stroke",
+    ),
     # Breathing
-    (re.compile(
-        r"can\s*'?t\s+breathe|unable\s+to\s+breathe|not\s+breathing"
-        r"|stopped?\s+breathing|choking|severe\s+(asthma|shortness\s+of\s+breath)",
-        re.IGNORECASE,
-    ), "respiratory emergency"),
+    (
+        re.compile(
+            r"can\s*'?t\s+breathe|unable\s+to\s+breathe|not\s+breathing"
+            r"|stopped?\s+breathing|choking|severe\s+(asthma|shortness\s+of\s+breath)",
+            re.IGNORECASE,
+        ),
+        "respiratory emergency",
+    ),
     # Bleeding / trauma
-    (re.compile(
-        r"uncontroll\w*\s+bleed|severe\s+bleed|won\s*'?t\s+stop\s+bleed"
-        r"|massive\s+blood\s+loss|gunshot|stab\s+wound",
-        re.IGNORECASE,
-    ), "severe bleeding or trauma"),
+    (
+        re.compile(
+            r"uncontroll\w*\s+bleed|severe\s+bleed|won\s*'?t\s+stop\s+bleed"
+            r"|massive\s+blood\s+loss|gunshot|stab\s+wound",
+            re.IGNORECASE,
+        ),
+        "severe bleeding or trauma",
+    ),
     # Consciousness
-    (re.compile(
-        r"unconscious|unresponsive|passed?\s+out\s+and\s+(not|won)"
-        r"|seizure\s+won\s*'?t\s+stop|status\s+epilepticus",
-        re.IGNORECASE,
-    ), "loss of consciousness or prolonged seizure"),
+    (
+        re.compile(
+            r"unconscious|unresponsive|passed?\s+out\s+and\s+(not|won)"
+            r"|seizure\s+won\s*'?t\s+stop|status\s+epilepticus",
+            re.IGNORECASE,
+        ),
+        "loss of consciousness or prolonged seizure",
+    ),
     # Anaphylaxis
-    (re.compile(
-        r"anaphyla\w*|throat\s+(closing|swell)|can\s*'?t\s+swallow\s+and\s+(can\s*'?t\s+breathe|swell)",
-        re.IGNORECASE,
-    ), "possible anaphylaxis"),
+    (
+        re.compile(
+            r"anaphyla\w*|throat\s+(closing|swell)|can\s*'?t\s+swallow\s+and\s+(can\s*'?t\s+breathe|swell)",
+            re.IGNORECASE,
+        ),
+        "possible anaphylaxis",
+    ),
     # Suicidal / self-harm
-    (re.compile(
-        r"want\s+to\s+(kill|end)\s+(myself|my\s+life|it\s+all)"
-        r"|suicid|self.?harm|overdos",
-        re.IGNORECASE,
-    ), "mental health crisis"),
+    (
+        re.compile(
+            r"want\s+to\s+(kill|end)\s+(myself|my\s+life|it\s+all)"
+            r"|suicid|self.?harm|overdos",
+            re.IGNORECASE,
+        ),
+        "mental health crisis",
+    ),
     # Poisoning
-    (re.compile(
-        r"poison|swallowed\s+(bleach|chemical|battery)",
-        re.IGNORECASE,
-    ), "possible poisoning"),
+    (
+        re.compile(
+            r"poison|swallowed\s+(bleach|chemical|battery)",
+            re.IGNORECASE,
+        ),
+        "possible poisoning",
+    ),
 ]
 
 _EMERGENCY_MESSAGE = (
@@ -103,7 +127,9 @@ def _coerce_symptom_inputs(symptoms: Any) -> list[str]:
     return normalized
 
 
-def classify_emergency(symptoms: list[str] | Any) -> tuple[bool, str | None, str | None]:
+def classify_emergency(
+    symptoms: list[str] | Any,
+) -> tuple[bool, str | None, str | None]:
     """Check symptom text against red-flag patterns.
 
     Returns (is_emergency, matched_category, appropriate_message).
@@ -121,14 +147,42 @@ def classify_emergency(symptoms: list[str] | Any) -> tuple[bool, str | None, str
     return False, None, None
 
 
-_AFFIRMATIVE_WORDS = frozenset({
-    "yes", "yeah", "yep", "correct", "right", "true", "definitely",
-    "absolutely", "sure", "does", "did", "is", "it does", "always",
-})
-_NEGATIVE_WORDS = frozenset({
-    "no", "nope", "not", "never", "none", "nah", "doesn't", "don't",
-    "didn't", "haven't", "hasn't", "isn't", "rarely", "neither",
-})
+_AFFIRMATIVE_WORDS = frozenset(
+    {
+        "yes",
+        "yeah",
+        "yep",
+        "correct",
+        "right",
+        "true",
+        "definitely",
+        "absolutely",
+        "sure",
+        "does",
+        "did",
+        "is",
+        "it does",
+        "always",
+    }
+)
+_NEGATIVE_WORDS = frozenset(
+    {
+        "no",
+        "nope",
+        "not",
+        "never",
+        "none",
+        "nah",
+        "doesn't",
+        "don't",
+        "didn't",
+        "haven't",
+        "hasn't",
+        "isn't",
+        "rarely",
+        "neither",
+    }
+)
 
 # How much a single affirmative/negative answer shifts a specialty's score.
 _ANSWER_BOOST = 1.5
@@ -275,13 +329,18 @@ def triage_symptoms(
         for term in _symptom_query_terms(symptom):
             res = (
                 sb.table("symptom_specialty_map")
-                .select("symptom,specialty_id,weight,follow_up_questions,specialties(id,name)")
+                .select(
+                    "symptom,specialty_id,weight,follow_up_questions,specialties(id,name)"
+                )
                 .ilike("symptom", f"%{term}%")
                 .execute()
             )
             rows = getattr(res, "data", None) or []
             for row in rows:
-                row_key = (str(row.get("symptom") or ""), str(row.get("specialty_id") or ""))
+                row_key = (
+                    str(row.get("symptom") or ""),
+                    str(row.get("specialty_id") or ""),
+                )
                 if row_key in seen_rows:
                     continue
                 seen_rows.add(row_key)
@@ -335,7 +394,11 @@ def triage_symptoms(
     confidence = top_score / total
 
     top_candidates = [
-        {"specialty_id": sid, "specialty_name": names.get(sid, ""), "score": round(sc / total, 2)}
+        {
+            "specialty_id": sid,
+            "specialty_name": names.get(sid, ""),
+            "score": round(sc / total, 2),
+        }
         for sid, sc in ranked[:3]
     ]
 
@@ -350,7 +413,9 @@ def triage_symptoms(
 
     # Not confident — gather follow-up questions from top candidates,
     # excluding questions that were already answered.
-    already_asked = {_coerce_text(question) for question in answers.keys()} if answers else set()
+    already_asked = (
+        {_coerce_text(question) for question in answers.keys()} if answers else set()
+    )
     follow_ups: list[str] = []
     for sid, _ in ranked[:2]:
         for q in questions.get(sid, []):

@@ -26,9 +26,13 @@ def test_triage_symptoms_prompts_for_missing_symptoms() -> None:
     assert result.follow_up_questions == ["Could you describe your symptoms?"]
 
 
-def test_triage_symptoms_short_circuits_emergencies(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_triage_symptoms_short_circuits_emergencies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     def fail_get_supabase() -> None:
-        raise AssertionError("triage_symptoms should not query Supabase for emergencies")
+        raise AssertionError(
+            "triage_symptoms should not query Supabase for emergencies"
+        )
 
     monkeypatch.setattr(triage_engine, "get_supabase", fail_get_supabase)
 
@@ -38,7 +42,9 @@ def test_triage_symptoms_short_circuits_emergencies(monkeypatch: pytest.MonkeyPa
     assert result.emergency_category == "cardiac emergency"
 
 
-def test_triage_symptoms_returns_fallback_when_no_matches(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_triage_symptoms_returns_fallback_when_no_matches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     sb = MockSupabase(tables={"symptom_specialty_map": [MockQuery(data=[])]})
     monkeypatch.setattr(triage_engine, "get_supabase", lambda: sb)
 
@@ -48,7 +54,9 @@ def test_triage_symptoms_returns_fallback_when_no_matches(monkeypatch: pytest.Mo
     assert "wasn't able to match" in result.follow_up_questions[0]
 
 
-def test_triage_symptoms_returns_confident_specialty(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_triage_symptoms_returns_confident_specialty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     rows = [
         {
             "symptom": "rash",
@@ -77,13 +85,17 @@ def test_triage_symptoms_returns_confident_specialty(monkeypatch: pytest.MonkeyP
     assert result.top_candidates[0]["specialty_id"] == "derm"
 
 
-def test_triage_symptoms_maps_migraines_and_nausea_to_neurology(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_triage_symptoms_maps_migraines_and_nausea_to_neurology(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     migraine_rows = [
         {
             "symptom": "migraine",
             "specialty_id": "neuro",
             "weight": 2,
-            "follow_up_questions": ["Do you see visual disturbances before the migraine?"],
+            "follow_up_questions": [
+                "Do you see visual disturbances before the migraine?"
+            ],
             "specialties": {"id": "neuro", "name": "Neurology"},
         }
     ]
@@ -125,7 +137,9 @@ def test_triage_symptoms_maps_migraines_and_nausea_to_neurology(monkeypatch: pyt
     assert result.confidence == 0.7
 
 
-def test_triage_symptoms_uses_answers_to_break_ties(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_triage_symptoms_uses_answers_to_break_ties(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     rows = [
         {
             "symptom": "rash",
@@ -156,7 +170,9 @@ def test_triage_symptoms_uses_answers_to_break_ties(monkeypatch: pytest.MonkeyPa
     assert result.confidence == 0.71
 
 
-def test_triage_symptoms_skips_already_answered_follow_ups(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_triage_symptoms_skips_already_answered_follow_ups(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     rows = [
         {
             "symptom": "rash",
@@ -187,7 +203,9 @@ def test_triage_symptoms_skips_already_answered_follow_ups(monkeypatch: pytest.M
     assert result.follow_up_questions == ["Any blistering?", "Any sneezing?"]
 
 
-def test_triage_symptoms_tolerates_non_string_symptoms_and_answers(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_triage_symptoms_tolerates_non_string_symptoms_and_answers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     rows = [
         {
             "symptom": "rash",
@@ -225,7 +243,9 @@ def test_triage_symptoms_tolerates_non_string_symptoms_and_answers(monkeypatch: 
     assert result.confidence == 0.71
 
 
-def test_get_all_specialties_returns_database_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_all_specialties_returns_database_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     specialties = [
         {"id": "allergy", "name": "Allergy", "description": "Allergy care"},
         {"id": "derm", "name": "Dermatology", "description": "Skin care"},
