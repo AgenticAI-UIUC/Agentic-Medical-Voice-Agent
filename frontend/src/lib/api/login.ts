@@ -21,3 +21,12 @@ export async function loginAccessToken(input: {
     },
   });
 }
+
+export async function logoutAccessToken(
+  token: string,
+): Promise<{ message: string }> {
+  return apiFetch<{ message: string }>('/api/v1/login/logout', {
+    method: 'POST',
+    token,
+  });
+}

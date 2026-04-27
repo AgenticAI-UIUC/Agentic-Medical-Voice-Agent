@@ -95,6 +95,16 @@ pnpm start
 | `/users`    | Admin user management (superuser only)             |
 | `/settings` | Profile editing and password change                |
 
+## Demo Login
+
+For local demos:
+
+| Email               | Password |
+| ------------------- | -------- |
+| `admin@example.com` | `12345678` |
+
+Do not use this demo password in production.
+
 ## API Client
 
 The API client layer is split by domain:

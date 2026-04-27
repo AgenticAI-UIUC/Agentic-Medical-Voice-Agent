@@ -141,7 +141,6 @@ Agentic-Medical-Voice-Agent/
 │   ├── migrations/
 │   ├── schema.sql
 │   ├── seed.sql
-│   ├── README.md
 │   └── pyproject.toml
 ├── frontend/
 │   ├── src/
@@ -643,8 +642,7 @@ These are useful onboarding artifacts because they explain conversation structur
 
 The repo also contains:
 
-- `README.md` for a broad top-level introduction
-- `backend/README.md` for API and setup notes
+- `README.md` for the top-level introduction, API reference, backend setup notes, and database guidance
 - `frontend/README.md` for dashboard structure
 - `CLAUDE.md` with contributor-oriented engineering notes
 
@@ -779,15 +777,14 @@ This codebase is especially interesting for people building:
 If you are onboarding to this repo, a good reading order is:
 
 1. `README.md`
-2. `backend/README.md`
-3. `backend/app/main.py`
-4. `backend/app/api/vapi_tools/*`
-5. `backend/app/services/triage_engine.py`
-6. `backend/app/services/slot_engine.py`
-7. `backend/schema.sql`
-8. `Medical Voice Agent — System Prompt.md`
-9. `frontend/src/app/page.tsx`
-10. `frontend/src/lib/api/*`
+2. `backend/app/main.py`
+3. `backend/app/api/vapi_tools/*`
+4. `backend/app/services/triage_engine.py`
+5. `backend/app/services/slot_engine.py`
+6. `backend/schema.sql`
+7. `Medical Voice Agent — System Prompt.md`
+8. `frontend/src/app/page.tsx`
+9. `frontend/src/lib/api/*`
 
 That path gives a fast understanding of both the product and the actual control flow.
 

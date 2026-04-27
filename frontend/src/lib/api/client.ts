@@ -26,13 +26,19 @@ async function parseResponse(response: Response) {
   return response.text();
 }
 
+function joinApiUrl(baseUrl: string, path: string) {
+  const normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${normalizedBaseUrl}${normalizedPath}`;
+}
+
 export async function apiFetch<T>(
   path: string,
   init?: ApiFetchOptions,
 ): Promise<T> {
   const { token, headers, ...rest } = init ?? {};
 
-  const url = `${API_BASE_URL}${path}`;
+  const url = joinApiUrl(API_BASE_URL, path);
 
   const response = await fetch(url, {
     ...rest,

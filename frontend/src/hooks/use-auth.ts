@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { loginAccessToken } from '@/lib/api/login';
+import { loginAccessToken, logoutAccessToken } from '@/lib/api/login';
 import {
   changeMyPassword,
   getCurrentUser,
@@ -47,8 +47,16 @@ export function useCurrentUserQuery(options?: { enabled?: boolean }) {
   });
 }
 
-export function logout() {
+export async function logout() {
+  const token = getAccessToken();
   clearAccessToken();
+  if (!token) return;
+
+  try {
+    await logoutAccessToken(token);
+  } catch {
+    // Local logout should still succeed if the token is already expired.
+  }
 }
 
 export function useUpdateMeMutation() {

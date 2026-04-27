@@ -7,6 +7,7 @@ import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { logout, useCurrentUserQuery } from '@/hooks/use-auth';
 import { getAccessToken } from '@/lib/api/auth';
+import { ApiError } from '@/lib/api/client';
 import { ThemeToggle } from '@/components/common/theme-toggle';
 import { useHasMounted } from '@/hooks/use-has-mounted';
 
@@ -29,8 +30,17 @@ export default function DashboardLayout({
     }
   }, [hasMounted, token, router]);
 
-  const handleLogout = () => {
-    logout();
+  useEffect(() => {
+    if (
+      meQuery.error instanceof ApiError &&
+      [401, 403].includes(meQuery.error.status)
+    ) {
+      void logout().finally(() => router.replace('/login'));
+    }
+  }, [meQuery.error, router]);
+
+  const handleLogout = async () => {
+    await logout();
     router.replace('/login');
   };
 

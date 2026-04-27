@@ -8,12 +8,18 @@ import { useEffect, useMemo, useState } from 'react';
 import { Fragment } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { useHasMounted } from '@/hooks/use-has-mounted';
 import { getAccessToken } from '@/lib/api/auth';
+import { ApiError } from '@/lib/api/client';
 import { getDoctorSchedule } from '@/lib/api/doctors';
+import { logout } from '@/hooks/use-auth';
 
 const START_HOUR = 8;
 const END_HOUR = 20;
-const GRID_HOURS = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => START_HOUR + i);
+const GRID_HOURS = Array.from(
+  { length: END_HOUR - START_HOUR + 1 },
+  (_, i) => START_HOUR + i,
+);
 
 function startOfWeek(input: Date) {
   const date = new Date(input);
@@ -36,7 +42,8 @@ function hourLabel(hour: number) {
 export default function DoctorSchedulePage() {
   const router = useRouter();
   const params = useParams<{ doctorId: string }>();
-  const token = getAccessToken();
+  const hasMounted = useHasMounted();
+  const token = hasMounted ? getAccessToken() : null;
 
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
 
@@ -47,7 +54,7 @@ export default function DoctorSchedulePage() {
         startDate: formatDateOnly(weekStart),
         days: 7,
       }),
-    enabled: !!token,
+    enabled: hasMounted && !!token,
   });
 
   const days = useMemo(() => {
@@ -59,20 +66,44 @@ export default function DoctorSchedulePage() {
   }, [weekStart]);
 
   useEffect(() => {
-    if (!token) {
+    if (hasMounted && !token) {
       router.replace('/login');
     }
-  }, [router, token]);
+  }, [hasMounted, router, token]);
+
+  useEffect(() => {
+    if (
+      scheduleQuery.error instanceof ApiError &&
+      [401, 403].includes(scheduleQuery.error.status)
+    ) {
+      void logout().finally(() => router.replace('/login'));
+    }
+  }, [scheduleQuery.error, router]);
+
+  if (!hasMounted) {
+    return (
+      <main className="mx-auto min-h-screen max-w-7xl p-6">
+        Loading app...
+      </main>
+    );
+  }
 
   if (!token) {
-    return <div className="p-6 text-muted-foreground">Redirecting to login...</div>;
+    return (
+      <main className="mx-auto min-h-screen max-w-7xl p-6">
+        Redirecting to login...
+      </main>
+    );
   }
 
   return (
     <main className="mx-auto min-h-screen max-w-7xl p-6">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <Link href="/" className="text-sm text-muted-foreground hover:text-foreground">
+          <Link
+            href="/"
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
             ← Back to doctors
           </Link>
           <h1 className="mt-2 text-2xl font-semibold">
@@ -80,41 +111,67 @@ export default function DoctorSchedulePage() {
           </h1>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={() => setWeekStart((curr) => {
-            const next = new Date(curr);
-            next.setDate(curr.getDate() - 7);
-            return next;
-          })}>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() =>
+              setWeekStart((curr) => {
+                const next = new Date(curr);
+                next.setDate(curr.getDate() - 7);
+                return next;
+              })
+            }
+          >
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <Button variant="outline" size="icon" onClick={() => setWeekStart((curr) => {
-            const next = new Date(curr);
-            next.setDate(curr.getDate() + 7);
-            return next;
-          })}>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() =>
+              setWeekStart((curr) => {
+                const next = new Date(curr);
+                next.setDate(curr.getDate() + 7);
+                return next;
+              })
+            }
+          >
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
       </div>
 
-      {scheduleQuery.isPending && <p className="text-muted-foreground">Loading schedule...</p>}
+      {scheduleQuery.isPending && (
+        <p className="text-muted-foreground">Loading schedule...</p>
+      )}
 
       {scheduleQuery.isSuccess && (
         <div className="overflow-x-auto rounded-xl border">
           <div className="grid min-w-[980px] grid-cols-[90px_repeat(7,minmax(120px,1fr))]">
             <div className="border-b bg-muted/40 p-3" />
             {days.map((day) => (
-              <div key={day.toISOString()} className="border-b border-l bg-muted/40 p-3 text-center">
+              <div
+                key={day.toISOString()}
+                className="border-b border-l bg-muted/40 p-3 text-center"
+              >
                 <p className="text-xs uppercase text-muted-foreground">
                   {day.toLocaleDateString(undefined, { weekday: 'short' })}
                 </p>
-                <p className="text-sm font-medium">{day.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })}</p>
+                <p className="text-sm font-medium">
+                  {day.toLocaleDateString('en-US', {
+                    month: '2-digit',
+                    day: '2-digit',
+                    year: 'numeric',
+                  })}
+                </p>
               </div>
             ))}
 
             {GRID_HOURS.map((hour) => (
               <Fragment key={hour}>
-                <div key={`label-${hour}`} className="border-b p-2 text-right text-xs text-muted-foreground">
+                <div
+                  key={`label-${hour}`}
+                  className="border-b p-2 text-right text-xs text-muted-foreground"
+                >
                   {hourLabel(hour)}
                 </div>
                 {days.map((day) => {
@@ -128,7 +185,10 @@ export default function DoctorSchedulePage() {
                   });
 
                   return (
-                    <div key={`${day.toISOString()}-${hour}`} className="relative border-b border-l p-1">
+                    <div
+                      key={`${day.toISOString()}-${hour}`}
+                      className="relative border-b border-l p-1"
+                    >
                       {slots.map((slot) => (
                         <div
                           key={slot.id}
@@ -140,7 +200,12 @@ export default function DoctorSchedulePage() {
                                 : 'bg-slate-200 text-slate-700'
                           }`}
                         >
-                          <p>{new Date(slot.start_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                          <p>
+                            {new Date(slot.start_at).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </p>
                           <p>{slot.status}</p>
                         </div>
                       ))}

@@ -10,29 +10,51 @@ import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { logout } from '@/hooks/use-auth';
+import { useHasMounted } from '@/hooks/use-has-mounted';
 import { getAccessToken } from '@/lib/api/auth';
+import { ApiError } from '@/lib/api/client';
 import { getDoctors } from '@/lib/api/doctors';
 import { ThemeToggle } from '@/components/common/theme-toggle';
 
 export default function LandingPage() {
   const router = useRouter();
-  const token = getAccessToken();
-
-  useEffect(() => {
-    if (!token) {
-      router.replace('/login');
-    }
-  }, [router, token]);
+  const hasMounted = useHasMounted();
+  const token = hasMounted ? getAccessToken() : null;
 
   const doctorsQuery = useQuery({
     queryKey: ['doctors'],
     queryFn: () => getDoctors(token ?? ''),
-    enabled: !!token,
+    enabled: hasMounted && !!token,
   });
+
+  useEffect(() => {
+    if (hasMounted && !token) {
+      router.replace('/login');
+    }
+  }, [hasMounted, router, token]);
+
+  useEffect(() => {
+    if (
+      doctorsQuery.error instanceof ApiError &&
+      [401, 403].includes(doctorsQuery.error.status)
+    ) {
+      void logout().finally(() => router.replace('/login'));
+    }
+  }, [doctorsQuery.error, router]);
+
+  if (!hasMounted) {
+    return (
+      <main className="mx-auto min-h-screen max-w-7xl p-6">
+        Loading app...
+      </main>
+    );
+  }
 
   if (!token) {
     return (
-      <div className="p-6 text-muted-foreground">Redirecting to login...</div>
+      <main className="mx-auto min-h-screen max-w-7xl p-6">
+        Redirecting to login...
+      </main>
     );
   }
 
@@ -49,8 +71,8 @@ export default function LandingPage() {
           <ThemeToggle />
           <Button
             variant="outline"
-            onClick={() => {
-              logout();
+            onClick={async () => {
+              await logout();
               router.replace('/login');
             }}
           >

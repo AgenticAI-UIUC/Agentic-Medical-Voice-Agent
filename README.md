@@ -197,7 +197,11 @@ Confirm Cancellation
 │   │   │   │   ├── book.py
 │   │   │   │   ├── reschedule.py
 │   │   │   │   └── cancel.py
-│   │   │   ├── admin/             # Admin CRUD endpoints
+│   │   │   ├── admin/             # Protected admin CRUD endpoints
+│   │   │   ├── deps.py            # Supabase Auth dependencies
+│   │   │   ├── doctors.py         # Authenticated dashboard doctor views
+│   │   │   ├── login.py           # Supabase Auth login/logout
+│   │   │   ├── users.py           # Staff user/profile management
 │   │   │   ├── vapi_webhook.py    # Call lifecycle events & transcripts
 │   │   │   └── vapi_helpers.py    # Payload parsing & signature verification
 │   │   ├── services/
@@ -207,6 +211,7 @@ Confirm Cancellation
 │   │   ├── main.py
 │   │   ├── config.py
 │   │   └── supabase.py
+│   ├── migrations/                # Incremental database changes
 │   ├── schema.sql
 │   ├── seed.sql
 │   └── pyproject.toml
@@ -333,8 +338,6 @@ The admin dashboard will be available at **http://localhost:3000**.
 | ----------------------------- | ----------------------- | ---------------------------------------- |
 | `PROJECT_NAME`                | `FastAPI App`           | Displayed in OpenAPI docs                |
 | `ENVIRONMENT`                 | `local`                 | `local`, `staging`, or `production`      |
-| `SECRET_KEY`                  | _(random)_              | JWT signing key (must be strong in prod) |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | `11520`                 | Token lifetime in minutes                |
 | `SUPABASE_URL`                | —                       | Supabase project URL                     |
 | `SUPABASE_SERVICE_ROLE_KEY`   | —                       | Supabase service role secret key         |
 | `CLINIC_TIMEZONE`             | `America/Chicago`       | Timezone for slot computation            |
@@ -350,9 +353,43 @@ The admin dashboard will be available at **http://localhost:3000**.
 | `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8000` | Backend API base URL    |
 | `NEXT_PUBLIC_APP_NAME`     | `App`                   | Display name (optional) |
 
+## Supabase Auth
+
+The staff dashboard uses Supabase Auth access tokens. Create the first staff user in Supabase Authentication, then set raw app metadata:
+
+```json
+{
+  "is_active": true,
+  "is_superuser": true
+}
+```
+
+Optional raw user metadata:
+
+```json
+{
+  "full_name": "Clinic Admin"
+}
+```
+
+`is_active` gates all dashboard access. `is_superuser` gates user management, patient/admin appointment reads, and doctor schedule mutations.
+
+### Demo Login
+
+For local demos, you can sign in with:
+
+| Email               | Password |
+| ------------------- | -------- |
+| `admin@example.com` | `12345678` |
+
+Do not use this demo password in production.
+
 ## API Endpoints
 
 ### Vapi Tool Endpoints
+
+All Vapi tool endpoints accept the standard Vapi tool-call payload and return
+`{"results": [...]}`.
 
 | Method | Path                                    | Description                         |
 | ------ | --------------------------------------- | ----------------------------------- |
@@ -368,16 +405,31 @@ The admin dashboard will be available at **http://localhost:3000**.
 | POST   | `/api/v1/vapi/tools/cancel`             | Cancel an appointment               |
 | POST   | `/api/v1/vapi/events`                   | Webhook for call lifecycle events   |
 
+### Auth and Dashboard Endpoints
+
+| Method       | Path                         | Description                          |
+| ------------ | ---------------------------- | ------------------------------------ |
+| POST         | `/api/v1/login/access-token` | Sign in with Supabase email/password |
+| POST         | `/api/v1/login/logout`       | Revoke current Supabase session      |
+| GET/PATCH    | `/api/v1/users/me`           | Read/update current profile          |
+| PATCH        | `/api/v1/users/me/password`  | Change current password              |
+| GET          | `/api/v1/doctors`            | List dashboard doctor cards          |
+| GET          | `/api/v1/doctors/:id/schedule` | Weekly doctor schedule             |
+| GET/POST     | `/api/v1/users`              | List/create users (superuser only)   |
+| PATCH/DELETE | `/api/v1/users/:id`          | Update/delete users (superuser only) |
+
 ### Admin Endpoints
 
-| Method         | Path                                      | Description                  |
-| -------------- | ----------------------------------------- | ---------------------------- |
-| GET/POST       | `/api/v1/admin/doctors`                   | List / create doctors        |
-| GET/PUT        | `/api/v1/admin/doctors/:id/availability`  | Manage weekly schedules      |
-| POST/GET/DELETE| `/api/v1/admin/doctors/:id/blocks`        | Manage time-off blocks       |
-| GET            | `/api/v1/admin/patients`                  | List / search patients       |
-| GET            | `/api/v1/admin/appointments`              | List appointments (filterable) |
-| GET            | `/health`                                 | Health check                 |
+| Method          | Path                                     | Description                    |
+| --------------- | ---------------------------------------- | ------------------------------ |
+| GET/POST        | `/api/v1/admin/doctors`                  | List / create doctors          |
+| GET/PUT         | `/api/v1/admin/doctors/:id/availability` | Manage weekly schedules        |
+| POST/GET/DELETE | `/api/v1/admin/doctors/:id/blocks`       | Manage time-off blocks         |
+| GET             | `/api/v1/admin/patients`                 | List / search patients         |
+| GET             | `/api/v1/admin/appointments`             | List appointments (filterable) |
+| GET             | `/health`                                | Health check                   |
+
+Admin endpoints require a bearer token. Doctor reads require an active user; doctor mutations and patient/appointment admin reads require `is_superuser=true`.
 
 ## Database Schema
 

@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-from datetime import date, time
-from typing import Any
-from uuid import UUID
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from app.api.deps import CurrentUser, get_current_active_user, get_current_superuser
 from app.supabase import get_supabase
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(
+    prefix="/admin",
+    tags=["admin"],
+    dependencies=[Depends(get_current_active_user)],
+)
 
 
 # ------------------------------------------------------------------
@@ -59,7 +62,11 @@ def list_doctors(active_only: bool = Query(default=True)):
 
 
 @router.post("/doctors")
-def create_doctor(payload: DoctorSetupIn):
+def create_doctor(
+    payload: DoctorSetupIn,
+    current_user: Annotated[CurrentUser, Depends(get_current_superuser)],
+):
+    del current_user
     sb = get_supabase()
 
     # 1. Create doctor
@@ -125,7 +132,12 @@ def get_availability(doctor_id: str):
 
 
 @router.put("/doctors/{doctor_id}/availability")
-def set_availability(doctor_id: str, windows: list[AvailabilityWindowIn]):
+def set_availability(
+    doctor_id: str,
+    windows: list[AvailabilityWindowIn],
+    current_user: Annotated[CurrentUser, Depends(get_current_superuser)],
+):
+    del current_user
     sb = get_supabase()
     # Replace all existing availability
     sb.table("doctor_availability").delete().eq("doctor_id", doctor_id).execute()
@@ -150,7 +162,12 @@ def set_availability(doctor_id: str, windows: list[AvailabilityWindowIn]):
 # ------------------------------------------------------------------
 
 @router.post("/doctors/{doctor_id}/blocks")
-def create_block(doctor_id: str, block: BlockIn):
+def create_block(
+    doctor_id: str,
+    block: BlockIn,
+    current_user: Annotated[CurrentUser, Depends(get_current_superuser)],
+):
+    del current_user
     sb = get_supabase()
     res = sb.table("doctor_blocks").insert({
         "doctor_id": doctor_id,
@@ -178,7 +195,12 @@ def list_blocks(doctor_id: str):
 
 
 @router.delete("/doctors/{doctor_id}/blocks/{block_id}")
-def delete_block(doctor_id: str, block_id: str):
+def delete_block(
+    doctor_id: str,
+    block_id: str,
+    current_user: Annotated[CurrentUser, Depends(get_current_superuser)],
+):
+    del current_user
     sb = get_supabase()
     sb.table("doctor_blocks").delete().eq("id", block_id).eq("doctor_id", doctor_id).execute()
     return {"status": "deleted"}
@@ -189,14 +211,22 @@ def delete_block(doctor_id: str, block_id: str):
 # ------------------------------------------------------------------
 
 @router.get("/patients")
-def list_patients(limit: int = Query(default=50, le=200)):
+def list_patients(
+    current_user: Annotated[CurrentUser, Depends(get_current_superuser)],
+    limit: int = Query(default=50, le=200),
+):
+    del current_user
     sb = get_supabase()
     res = sb.table("patients").select("*").order("created_at", desc=True).limit(limit).execute()
     return getattr(res, "data", None) or []
 
 
 @router.get("/patients/{uin}")
-def get_patient_by_uin(uin: str):
+def get_patient_by_uin(
+    uin: str,
+    current_user: Annotated[CurrentUser, Depends(get_current_superuser)],
+):
+    del current_user
     sb = get_supabase()
     res = sb.table("patients").select("*").eq("uin", uin).limit(1).execute()
     data = getattr(res, "data", None) or []
@@ -211,9 +241,11 @@ def get_patient_by_uin(uin: str):
 
 @router.get("/appointments")
 def list_appointments(
+    current_user: Annotated[CurrentUser, Depends(get_current_superuser)],
     status: str | None = Query(default=None),
     limit: int = Query(default=50, le=200),
 ):
+    del current_user
     sb = get_supabase()
     query = (
         sb.table("appointments")
