@@ -571,7 +571,7 @@ export default function PatientsPage() {
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                           <div className="space-y-1">
                             <p className="font-medium">
-                              {formatDateTime(appointment.start_at)}
+                              {formatDate(appointment.start_at)}
                             </p>
                             <p className="text-muted-foreground">
                               {appointment.doctors?.full_name ??

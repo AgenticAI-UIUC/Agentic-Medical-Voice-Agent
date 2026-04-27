@@ -61,3 +61,13 @@ export function getDoctorSchedule(
     token,
   });
 }
+
+export function cancelAppointment(token: string, appointmentId: string) {
+  return apiFetch<{ id: string; status: string }>(
+    `/api/v1/admin/appointments/${appointmentId}/cancel`,
+    {
+      method: 'PATCH',
+      token,
+    },
+  );
+}
