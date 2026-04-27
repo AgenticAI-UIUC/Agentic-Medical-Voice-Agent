@@ -1,9 +1,10 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle,
   CalendarClock,
+  CalendarX,
   ChevronLeft,
   ChevronRight,
   FileText,
@@ -15,6 +16,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { Fragment } from 'react';
+import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -28,7 +30,12 @@ import {
 import { useHasMounted } from '@/hooks/use-has-mounted';
 import { getAccessToken } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
-import { type DoctorSlot, getDoctorSchedule } from '@/lib/api/doctors';
+import { getApiErrorMessage } from '@/lib/api/get-api-error-message';
+import {
+  cancelAppointment,
+  type DoctorSlot,
+  getDoctorSchedule,
+} from '@/lib/api/doctors';
 import { logout } from '@/hooks/use-auth';
 
 const START_HOUR = 8;
@@ -107,7 +114,7 @@ function DetailRow({
         <dt className="text-xs font-medium uppercase text-muted-foreground">
           {label}
         </dt>
-        <dd className="mt-1 break-words text-sm">
+        <dd className="mt-1 wrap-break-word text-sm">
           {value?.trim() || 'Not recorded'}
         </dd>
       </div>
@@ -122,7 +129,7 @@ function ScheduleTableSkeleton({ days }: { days: Date[] }) {
       aria-label="Loading doctor schedule"
       className="overflow-x-auto rounded-xl border"
     >
-      <div className="grid min-w-[980px] grid-cols-[90px_repeat(7,minmax(120px,1fr))]">
+      <div className="grid min-w-245 grid-cols-[90px_repeat(7,minmax(120px,1fr))]">
         <div className="border-b bg-muted/40 p-3" />
         {days.map((day) => (
           <div
@@ -169,18 +176,46 @@ export default function DoctorSchedulePage() {
   const params = useParams<{ doctorId: string }>();
   const hasMounted = useHasMounted();
   const token = hasMounted ? getAccessToken() : null;
+  const queryClient = useQueryClient();
 
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [selectedSlot, setSelectedSlot] = useState<DoctorSlot | null>(null);
+  const [isConfirmingCancel, setIsConfirmingCancel] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const scheduleQueryKey = [
+    'doctor-schedule',
+    params.doctorId,
+    formatDateOnly(weekStart),
+  ] as const;
 
   const scheduleQuery = useQuery({
-    queryKey: ['doctor-schedule', params.doctorId, formatDateOnly(weekStart)],
+    queryKey: scheduleQueryKey,
     queryFn: () =>
       getDoctorSchedule(token ?? '', params.doctorId, {
         startDate: formatDateOnly(weekStart),
         days: 7,
       }),
     enabled: hasMounted && !!token,
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: (appointmentId: string) =>
+      cancelAppointment(token ?? '', appointmentId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: scheduleQueryKey });
+      toast.success('Appointment cancelled');
+      setSelectedSlot(null);
+      setIsConfirmingCancel(false);
+      setCancelError(null);
+    },
+    onError: (error) => {
+      const message = getApiErrorMessage(
+        error,
+        'Could not cancel the appointment.',
+      );
+      setCancelError(message);
+      toast.error(message);
+    },
   });
 
   const days = useMemo(() => {
@@ -268,7 +303,7 @@ export default function DoctorSchedulePage() {
 
       {scheduleQuery.isSuccess && (
         <div className="overflow-x-auto rounded-xl border">
-          <div className="grid min-w-[980px] grid-cols-[90px_repeat(7,minmax(120px,1fr))]">
+          <div className="grid min-w-245 grid-cols-[90px_repeat(7,minmax(120px,1fr))]">
             <div className="border-b bg-muted/40 p-3" />
             {days.map((day) => (
               <div
@@ -357,7 +392,12 @@ export default function DoctorSchedulePage() {
       <Dialog
         open={selectedSlot !== null}
         onOpenChange={(open) => {
-          if (!open) setSelectedSlot(null);
+          if (!open) {
+            setSelectedSlot(null);
+            setIsConfirmingCancel(false);
+            setCancelError(null);
+            cancelMutation.reset();
+          }
         }}
       >
         {selectedSlot && (
@@ -406,7 +446,67 @@ export default function DoctorSchedulePage() {
               </div>
             </dl>
 
+            {isConfirmingCancel && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
+                <p className="font-medium">Cancel this appointment?</p>
+                <p className="mt-1 text-muted-foreground">
+                  This will remove it from the doctor timetable and make the
+                  slot available again.
+                </p>
+                {cancelError && (
+                  <p className="mt-2 text-sm text-destructive">
+                    {cancelError}
+                  </p>
+                )}
+                <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setIsConfirmingCancel(false);
+                      setCancelError(null);
+                      cancelMutation.reset();
+                    }}
+                    disabled={cancelMutation.isPending}
+                  >
+                    Keep appointment
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={() => {
+                      if (selectedSlot.appointment_id) {
+                        cancelMutation.mutate(selectedSlot.appointment_id);
+                      }
+                    }}
+                    disabled={
+                      cancelMutation.isPending || !selectedSlot.appointment_id
+                    }
+                  >
+                    <CalendarX className="h-4 w-4" />
+                    {cancelMutation.isPending
+                      ? 'Cancelling...'
+                      : 'Confirm cancel'}
+                  </Button>
+                </div>
+              </div>
+            )}
+
             <DialogFooter>
+              {!isConfirmingCancel && (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={() => {
+                    setIsConfirmingCancel(true);
+                    setCancelError(null);
+                  }}
+                  disabled={!selectedSlot.appointment_id}
+                >
+                  <CalendarX className="h-4 w-4" />
+                  Cancel appointment
+                </Button>
+              )}
               {(selectedSlot.patient?.id || selectedSlot.patient?.uin) && (
                 <Button asChild>
                   <Link href={patientHref(selectedSlot)}>

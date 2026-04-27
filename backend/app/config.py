@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     # Vapi webhook secret (optional — set to enforce signature check)
     VAPI_WEBHOOK_SECRET: str = ""
 
+    # Semantic triage / embeddings
+    OPENAI_API_KEY: str = ""
+    TRIAGE_SEMANTIC_SEARCH_ENABLED: bool = False
+    TRIAGE_SEMANTIC_MATCH_COUNT: int = 5
+    TRIAGE_SEMANTIC_MATCH_THRESHOLD: float = 0.3
+    TRIAGE_SEMANTIC_SCORE_SCALE: float = 2.0
+
     # CORS
     FRONTEND_HOST: str = "http://localhost:3000"
     BACKEND_CORS_ORIGINS: Annotated[list[str], NoDecode] = []

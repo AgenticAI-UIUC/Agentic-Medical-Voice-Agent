@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentUser, get_current_active_user, get_current_superuser
@@ -350,7 +351,7 @@ def list_appointments(
     sb = get_supabase()
     query = (
         sb.table("appointments")
-        .select("*,doctors(full_name),patients(uin,full_name)")
+        .select("*,doctors(full_name),patients(uin,full_name),specialties(name)")
         .order("created_at", desc=True)
         .limit(limit)
     )
@@ -358,3 +359,45 @@ def list_appointments(
         query = query.eq("status", status)
     res = query.execute()
     return getattr(res, "data", None) or []
+
+
+@router.patch("/appointments/{appointment_id}/cancel")
+def cancel_appointment(
+    appointment_id: str,
+    current_user: Annotated[CurrentUser, Depends(get_current_active_user)],
+):
+    del current_user
+    sb = get_supabase()
+    lookup = (
+        sb.table("appointments")
+        .select("id,status")
+        .eq("id", appointment_id)
+        .limit(1)
+        .execute()
+    )
+    rows = getattr(lookup, "data", None) or []
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Appointment not found",
+        )
+
+    appointment = rows[0]
+    if appointment.get("status") != "CONFIRMED":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only confirmed appointments can be cancelled",
+        )
+
+    update_row = {
+        "status": "CANCELLED",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    res = (
+        sb.table("appointments")
+        .update(update_row)
+        .eq("id", appointment_id)
+        .execute()
+    )
+    data = getattr(res, "data", None) or []
+    return data[0] if data else {"id": appointment_id, **update_row}

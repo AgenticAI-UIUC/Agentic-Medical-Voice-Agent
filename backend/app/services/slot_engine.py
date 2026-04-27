@@ -7,14 +7,12 @@ from zoneinfo import ZoneInfo
 
 from app.config import settings
 from app.services.time_utils import (
-    DayRange,
     day_range_to_utc,
     is_in_bucket,
     now_utc,
     parse_preferred_day,
     parse_time_bucket,
     format_for_voice,
-    Bucket,
 )
 from app.supabase import get_supabase
 
@@ -123,9 +121,6 @@ def _generate_theoretical_slots(
         dow = row["day_of_week"]
         by_dow.setdefault(dow, []).append(row)
 
-    current = (
-        start_date_utc.date() if hasattr(start_date_utc, "date") else start_date_utc
-    )
     end_d = end_date_utc.date() if hasattr(end_date_utc, "date") else end_date_utc
 
     # Iterate day by day
@@ -371,6 +366,7 @@ def find_slots_for_specialty(
         for s in slots:
             s["doctor_id"] = doctor_id
             s["doctor_name"] = doctor_name
+            s["specialty_id"] = specialty_id
         all_slots.extend(slots)
 
     # Sort by start time, take top N

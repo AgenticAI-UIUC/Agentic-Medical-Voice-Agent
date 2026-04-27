@@ -114,6 +114,22 @@ CREATE TABLE public.symptom_specialty_map (
   CONSTRAINT symptom_specialty_map_specialty_id_fkey FOREIGN KEY (specialty_id) REFERENCES public.specialties(id)
 );
 
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE TABLE public.medical_knowledge (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  content text NOT NULL,
+  embedding vector(1536),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT medical_knowledge_pkey PRIMARY KEY (id)
+);
+CREATE UNIQUE INDEX idx_medical_knowledge_content
+  ON public.medical_knowledge (md5(content));
+CREATE INDEX idx_medical_knowledge_embedding
+  ON public.medical_knowledge
+  USING hnsw (embedding vector_cosine_ops)
+  WITH (m = 16, ef_construction = 64);
+
 -- Atomically insert a new appointment and cancel the original in one transaction.
 -- Returns a JSON object with status, new_appointment_id, and original_appointment_id.
 CREATE OR REPLACE FUNCTION public.reschedule_appointment(
@@ -176,4 +192,29 @@ BEGIN
     'original_appointment_id', p_original_appointment_id
   );
 END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.match_medical_knowledge(
+  query_embedding vector(1536),
+  match_count int DEFAULT 5,
+  match_threshold float DEFAULT 0.3
+)
+RETURNS TABLE (
+  id uuid,
+  content text,
+  metadata jsonb,
+  similarity float
+)
+LANGUAGE sql STABLE
+AS $$
+  SELECT
+    mk.id,
+    mk.content,
+    mk.metadata,
+    1 - (mk.embedding <=> query_embedding) AS similarity
+  FROM public.medical_knowledge mk
+  WHERE mk.embedding IS NOT NULL
+    AND 1 - (mk.embedding <=> query_embedding) > match_threshold
+  ORDER BY mk.embedding <=> query_embedding
+  LIMIT match_count;
 $$;

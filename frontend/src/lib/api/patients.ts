@@ -21,8 +21,6 @@ export type PatientAppointment = {
   end_at: string;
   reason?: string | null;
   symptoms?: string | null;
-  severity_description?: string | null;
-  severity_rating?: number | null;
   urgency: 'ROUTINE' | 'URGENT' | 'ER' | string;
   status: 'CONFIRMED' | 'CANCELLED' | 'COMPLETED' | 'NO_SHOW' | string;
   vapi_call_id?: string | null;
@@ -30,6 +28,9 @@ export type PatientAppointment = {
   updated_at?: string | null;
   doctors?: {
     full_name?: string | null;
+  } | null;
+  specialties?: {
+    name?: string | null;
   } | null;
   patients?: {
     uin?: string | null;

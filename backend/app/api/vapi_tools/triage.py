@@ -61,8 +61,15 @@ def _normalize_answers(raw: Any) -> dict[str, str]:
 def _handle_triage(args: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     symptoms = _normalize_symptoms(args.get("symptoms"))
     answers = _normalize_answers(args.get("answers"))
+    description = _coerce_text(
+        args.get("description")
+        or args.get("symptom_description")
+        or args.get("full_description")
+    )
+    if not description and isinstance(args.get("symptoms"), str):
+        description = _coerce_text(args.get("symptoms"))
 
-    result = triage_symptoms(symptoms, answers)
+    result = triage_symptoms(symptoms, answers, description=description)
 
     if result.is_emergency:
         return {
