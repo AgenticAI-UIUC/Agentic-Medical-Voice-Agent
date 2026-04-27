@@ -8,6 +8,17 @@ Built with **Vapi.ai** for voice orchestration, **FastAPI** for backend logic, *
 
 [Live Demo Presentation](https://docs.google.com/presentation/d/1cgQ5Le6WUlc7gRtGxONqgf50JMEoKzHeZP6AZMr_YFc/edit?slide=id.g3de75b2e283_0_1#slide=id.g3de75b2e283_0_1)
 
+### Production URLs
+
+- Frontend: https://medicalvoiceagentfrontend.vercel.app
+- Backend: https://medicalvoiceagentbackend.vercel.app
+
+### Demo Login
+
+| Email               | Password |
+| ------------------- | -------- |
+| `admin@example.com` | `12345678` |
+
 ## How It Works
 
 ```
@@ -372,16 +383,6 @@ Optional raw user metadata:
 ```
 
 `is_active` gates all dashboard access. `is_superuser` gates user management, patient/admin appointment reads, and doctor schedule mutations.
-
-### Demo Login
-
-For local demos, you can sign in with:
-
-| Email               | Password |
-| ------------------- | -------- |
-| `admin@example.com` | `12345678` |
-
-Do not use this demo password in production.
 
 ## API Endpoints
 
