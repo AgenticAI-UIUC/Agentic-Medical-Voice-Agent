@@ -37,6 +37,36 @@ def test_generate_theoretical_slots_builds_utc_slots_from_local_availability() -
     ]
 
 
+def test_fetch_booked_queries_overlapping_appointment_ranges(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    start_utc = datetime(2026, 4, 6, 14, 0, tzinfo=timezone.utc)
+    end_utc = datetime(2026, 4, 6, 18, 0, tzinfo=timezone.utc)
+    booked_query = MockQuery(
+        data=[
+            {
+                "start_at": "2026-04-06T14:30:00Z",
+                "end_at": "2026-04-06T15:30:00Z",
+            }
+        ]
+    )
+    sb = MockSupabase(tables={"appointments": [booked_query]})
+    monkeypatch.setattr(slot_engine, "get_supabase", lambda: sb)
+
+    booked_ranges = slot_engine._fetch_booked("doc-1", start_utc, end_utc)
+
+    assert booked_ranges == [
+        (
+            datetime(2026, 4, 6, 14, 30, tzinfo=timezone.utc),
+            datetime(2026, 4, 6, 15, 30, tzinfo=timezone.utc),
+        )
+    ]
+    assert ("select", ("start_at,end_at",), {}) in booked_query.calls
+    assert ("lt", ("start_at", end_utc.isoformat()), {}) in booked_query.calls
+    assert ("gt", ("end_at", start_utc.isoformat()), {}) in booked_query.calls
+    assert not any(call[0] == "gte" for call in booked_query.calls)
+
+
 def test_find_available_slots_filters_past_booked_and_blocked(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -71,9 +101,12 @@ def test_find_available_slots_filters_past_booked_and_blocked(
     monkeypatch.setattr(
         slot_engine,
         "_fetch_booked",
-        lambda doctor_id, start_utc, end_utc: {
-            datetime(2026, 4, 6, 16, 0, tzinfo=timezone.utc)
-        },
+        lambda doctor_id, start_utc, end_utc: [
+            (
+                datetime(2026, 4, 6, 16, 0, tzinfo=timezone.utc),
+                datetime(2026, 4, 6, 17, 0, tzinfo=timezone.utc),
+            )
+        ],
     )
     monkeypatch.setattr(
         slot_engine,
@@ -108,6 +141,60 @@ def test_find_available_slots_filters_past_booked_and_blocked(
     ]
 
 
+def test_find_available_slots_filters_booked_appointments_by_overlap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixed_now = datetime(2026, 4, 6, 14, 0, tzinfo=timezone.utc)
+    theoretical_slots = [
+        (
+            datetime(2026, 4, 6, 15, 0, tzinfo=timezone.utc),
+            datetime(2026, 4, 6, 16, 0, tzinfo=timezone.utc),
+        ),
+        (
+            datetime(2026, 4, 6, 16, 0, tzinfo=timezone.utc),
+            datetime(2026, 4, 6, 17, 0, tzinfo=timezone.utc),
+        ),
+        (
+            datetime(2026, 4, 6, 17, 0, tzinfo=timezone.utc),
+            datetime(2026, 4, 6, 18, 0, tzinfo=timezone.utc),
+        ),
+    ]
+
+    monkeypatch.setattr(slot_engine, "now_utc", lambda: fixed_now)
+    monkeypatch.setattr(
+        slot_engine, "_fetch_availability", lambda doctor_id: [{"configured": True}]
+    )
+    monkeypatch.setattr(
+        slot_engine,
+        "_fetch_booked",
+        lambda doctor_id, start_utc, end_utc: [
+            (
+                datetime(2026, 4, 6, 15, 30, tzinfo=timezone.utc),
+                datetime(2026, 4, 6, 16, 30, tzinfo=timezone.utc),
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        slot_engine, "_fetch_blocks", lambda doctor_id, start_utc, end_utc: []
+    )
+    monkeypatch.setattr(
+        slot_engine, "_generate_theoretical_slots", lambda *args: theoretical_slots
+    )
+    monkeypatch.setattr(slot_engine, "format_for_voice", lambda dt: f"slot-{dt.hour}")
+
+    slots = slot_engine.find_available_slots(
+        "doc-1", "next available", "any", max_slots=5
+    )
+
+    assert slots == [
+        {
+            "start_at": "2026-04-06T17:00:00+00:00",
+            "end_at": "2026-04-06T18:00:00+00:00",
+            "label": "slot-17",
+        }
+    ]
+
+
 def test_find_available_slots_treats_as_soon_as_possible_as_next_available(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -132,7 +219,7 @@ def test_find_available_slots_treats_as_soon_as_possible_as_next_available(
         slot_engine, "_fetch_availability", lambda doctor_id: [{"configured": True}]
     )
     monkeypatch.setattr(
-        slot_engine, "_fetch_booked", lambda doctor_id, start_utc, end_utc: set()
+        slot_engine, "_fetch_booked", lambda doctor_id, start_utc, end_utc: []
     )
     monkeypatch.setattr(
         slot_engine, "_fetch_blocks", lambda doctor_id, start_utc, end_utc: []

@@ -55,23 +55,24 @@ def _fetch_availability(doctor_id: str) -> list[dict[str, Any]]:
 
 def _fetch_booked(
     doctor_id: str, start_utc: datetime, end_utc: datetime
-) -> set[datetime]:
-    """Return set of start_at datetimes that are already booked (non-cancelled)."""
+) -> list[tuple[datetime, datetime]]:
+    """Return booked appointment ranges in UTC for non-cancelled appointments."""
     sb = get_supabase()
     res = (
         sb.table("appointments")
-        .select("start_at")
+        .select("start_at,end_at")
         .eq("doctor_id", doctor_id)
         .neq("status", "CANCELLED")
-        .gte("start_at", start_utc.isoformat())
         .lt("start_at", end_utc.isoformat())
+        .gt("end_at", start_utc.isoformat())
         .execute()
     )
     rows = getattr(res, "data", None) or []
-    booked = set()
+    booked = []
     for r in rows:
         s = r["start_at"].replace("Z", "+00:00")
-        booked.add(datetime.fromisoformat(s))
+        e = r["end_at"].replace("Z", "+00:00")
+        booked.append((datetime.fromisoformat(s), datetime.fromisoformat(e)))
     return booked
 
 
@@ -101,8 +102,15 @@ def _is_blocked(
     slot_start: datetime, slot_end: datetime, blocks: list[tuple[datetime, datetime]]
 ) -> bool:
     """Check if a slot overlaps any block."""
-    for bs, be in blocks:
-        if slot_start < be and slot_end > bs:
+    return _overlaps_any(slot_start, slot_end, blocks)
+
+
+def _overlaps_any(
+    slot_start: datetime, slot_end: datetime, ranges: list[tuple[datetime, datetime]]
+) -> bool:
+    """Check if a slot overlaps any time range."""
+    for range_start, range_end in ranges:
+        if slot_start < range_end and slot_end > range_start:
             return True
     return False
 
@@ -302,7 +310,7 @@ def find_available_slots(
     if not availability:
         return []
 
-    booked = _fetch_booked(doctor_id, w_start, w_end)
+    booked_ranges = _fetch_booked(doctor_id, w_start, w_end)
     blocks = _fetch_blocks(doctor_id, w_start, w_end)
 
     theoretical = _generate_theoretical_slots(availability, w_start, w_end)
@@ -312,7 +320,7 @@ def find_available_slots(
     for start, end in theoretical:
         if start < now:
             continue
-        if start in booked:
+        if _overlaps_any(start, end, booked_ranges):
             continue
         if _is_blocked(start, end, blocks):
             continue
