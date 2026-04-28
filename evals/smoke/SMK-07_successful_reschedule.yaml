@@ -28,6 +28,8 @@ user_script:
   - speaker: user
     text: It's the ear pain follow-up with Dr. Lisa Martinez.
   - speaker: user
+    text: It was next Tuesday morning.
+  - speaker: user
     text: Yes.
   - speaker: user
     text: Next week.
@@ -79,10 +81,12 @@ must_do:
 
 must_not_do:
   - Ask whether the caller is new or returning before identification.
+  - Ask for more than one extra appointment detail after the caller gives both the doctor and reason.
   - Call book and cancel separately for this reschedule.
   - Cancel the original appointment before the patient confirms a new slot.
 
 failure_signals:
   - identify_patient is skipped.
+  - The assistant keeps asking for appointment details after the caller gives a rough timing answer.
   - reschedule_finalize is never called after slot selection.
   - book or cancel is used instead of reschedule_finalize.

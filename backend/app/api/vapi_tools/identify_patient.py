@@ -53,7 +53,7 @@ def _invalid_uin_result(uin: str, *, action: str) -> dict[str, Any]:
         "expected_digits": 9,
         "received_digits": received_digits,
         "message": (
-            f"I heard {received_digits} digits, but I need your 9-digit university UIN to {action}."
+            f"I heard {received_digits} digits, but I need your 9-digit university ID number to {action}."
         ),
     }
 

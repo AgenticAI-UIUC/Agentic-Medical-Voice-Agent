@@ -19,7 +19,7 @@ test_data:
   duplicate_uin: "123456789"
   corrected_uin: "123456770"
   full_name: Taylor Reed
-  phone: "12345678"
+  phone: "1234567890"
 
 stop_condition: End the run after the assistant asks its first symptom-collection question after the corrected-UIN registration succeeds.
 
@@ -35,7 +35,7 @@ user_script:
   - speaker: user
     text: My name is Taylor Reed.
   - speaker: user
-    text: My phone number is one two three four five six seven eight.
+    text: My phone number is one two three four five six seven eight nine zero.
   - speaker: user
     text: Yes.
   - speaker: user
@@ -52,14 +52,14 @@ expected_tool_path:
     args_match:
       uin: "123456789"
       full_name: Taylor Reed
-      phone_digits: "12345678"
+      phone_digits: "1234567890"
   - tool: register_patient
     expect_status:
       - REGISTERED
     args_match:
       uin: "123456770"
       full_name: Taylor Reed
-      phone_digits: "12345678"
+      phone_digits: "1234567890"
 
 must_do:
   - Treat the first `ALREADY_EXISTS` result as a duplicate-UIN correction path, not a returning-patient lookup.

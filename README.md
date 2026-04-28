@@ -569,11 +569,11 @@ The slot engine computes available appointment times on-the-fly from weekly temp
 
 These are the tools configured in the Vapi dashboard. Each tool calls a backend endpoint via Vapi's server URL.
 
-Prompt/tool alignment note: if the live assistant still self-validates UIN length, repeats a UIN confirmation twice in the same turn, or invents `INVALID` reasons after you update this repo, refresh the system prompt in the Vapi dashboard so the hosted assistant matches the checked-in prompt.
+Prompt/tool alignment note: if the live assistant still self-validates UIN length, repeats a UIN confirmation twice in the same turn, says "UN" instead of "university ID number," or invents `INVALID` reasons after you update this repo, refresh the system prompt in the Vapi dashboard so the hosted assistant matches the checked-in prompt.
 
 ### identify_patient
 
-Look up an existing patient by their 9-digit university UIN. Returns the patient record if found, or an error if the UIN is invalid or not registered.
+Look up an existing patient by their 9-digit university ID number. Returns the patient record if found, or an error if the UIN is invalid or not registered.
 
 ```json
 {
@@ -689,6 +689,11 @@ Find available appointment slots for a given specialty or doctor within a prefer
 }
 ```
 
+For exact-count Vapi smoke evals of routine new-concern slot searches, expect
+only `specialty_id`, `preferred_day`, and `preferred_time`. Do not add optional
+or prose-placeholder argument rows; Vapi treats expected-tool-call rows
+literally.
+
 ### book
 
 Book a confirmed appointment for a patient with a specific doctor and time slot.
@@ -737,6 +742,13 @@ Book a confirmed appointment for a patient with a specific doctor and time slot.
   "required": ["patient_id", "doctor_id", "start_at", "end_at"]
 }
 ```
+
+This is the backend-accepted schema. For exact-count Vapi smoke evals of routine
+new-concern bookings, expect only the fields the assistant should consistently
+send: `patient_id`, `doctor_id`, `start_at`, `end_at`, `specialty_id`, and
+`symptoms`. Do not include `reason` or `urgency` in those routine booking evals;
+the backend accepts them as optional fields and defaults omitted `urgency` to
+`ROUTINE`.
 
 ### find_appointment
 

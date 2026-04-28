@@ -28,6 +28,8 @@ user_script:
   - speaker: user
     text: Yes.
   - speaker: user
+    text: Yes.
+  - speaker: user
     text: This is for a new concern.
   - speaker: user
     text: I've been having stomach pain and nausea on and off for a few days.
@@ -58,17 +60,36 @@ expected_tool_path:
   - tool: find_slots
     expect_status:
       - OK
+    args_exact_count: 3
+    args_required:
+      - specialty_id
+      - preferred_day
+      - preferred_time
     args_match:
+      specialty_id: a0000000-0000-0000-0000-000000000006
       preferred_day: next week
       preferred_time: afternoon
   - tool: book
     expect_status:
       - CONFIRMED
+    args_exact_count: 6
+    vapi_dashboard_note: >
+      Do not exact-match the symptoms value in Vapi expected-tool-call rows.
+      Use an LLM-as-a-judge checkpoint to verify that symptoms are present and
+      related to the caller's stomach-pain/nausea concern.
     args_required:
       - patient_id
       - doctor_id
       - start_at
       - end_at
+      - specialty_id
+      - symptoms
+    args_match:
+      specialty_id: a0000000-0000-0000-0000-000000000006
+    args_should_include:
+      symptoms:
+        - stomach pain
+        - nausea
 
 must_do:
   - Ask for the UIN once the caller says they have been there before.
@@ -80,6 +101,7 @@ must_do:
 must_not_do:
   - Call register_patient in this flow.
   - Ask whether the returning patient is a new patient after identification.
+  - Ask the patient to describe symptoms again after they already gave a symptom description.
   - Ask for a severity rating before triage.
   - Skip patient identification and go straight to triage or slots.
 

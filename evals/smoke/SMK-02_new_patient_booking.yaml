@@ -66,17 +66,37 @@ expected_tool_path:
   - tool: find_slots
     expect_status:
       - OK
+    args_exact_count: 3
+    args_required:
+      - specialty_id
+      - preferred_day
+      - preferred_time
     args_match:
+      specialty_id: a0000000-0000-0000-0000-000000000003
       preferred_day: next week
       preferred_time: morning
   - tool: book
     expect_status:
       - CONFIRMED
+    args_exact_count: 6
+    vapi_dashboard_note: >
+      Do not exact-match the symptoms value in Vapi expected-tool-call rows.
+      The assistant may correctly normalize this concern as "rash", "itchy",
+      or "rash on both arms". Use an LLM-as-a-judge checkpoint to verify that
+      symptoms are present and related to the caller's rash/itchy concern.
     args_required:
       - patient_id
       - doctor_id
       - start_at
       - end_at
+      - specialty_id
+      - symptoms
+    args_match:
+      specialty_id: a0000000-0000-0000-0000-000000000003
+    args_should_include:
+      symptoms:
+        - rash
+        - itchy
 
 must_do:
   - Confirm the UIN before calling register_patient.
@@ -89,6 +109,7 @@ must_not_do:
   - Call register_patient before collecting full_name and confirmed phone.
   - Reset the conversation with "What can I help you with today?" after registration.
   - Ask whether this newly registered patient is calling for a follow-up.
+  - Ask the patient to describe symptoms again after they already gave a symptom description.
   - Ask for a severity rating before triage.
   - Claim registration or booking succeeded before the tool confirms it.
 

@@ -51,6 +51,12 @@ Treat each file as a checklist with four levels of assertions:
 
 If a run passes the tool path but fails the spoken behavior, it still fails the eval.
 
+For Vapi dashboard setup, keep exact expected-tool-call checks to stable values
+such as IDs, timestamps, and simple preferences. Do not exact-match free-form
+medical summary values like `symptoms`; the assistant may correctly normalize
+the same caller phrase in more than one way. Use an LLM-as-a-judge checkpoint
+for semantic symptom checks.
+
 ## Suggested First Smoke Suite
 
 Run these after prompt edits, tool schema changes, or backend changes that touch booking flow:

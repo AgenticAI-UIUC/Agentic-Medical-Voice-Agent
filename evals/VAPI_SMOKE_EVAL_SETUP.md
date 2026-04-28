@@ -15,6 +15,13 @@ For each eval:
 5. Set `Approach` to `LLM-as-a-judge`.
 6. Keep `Include Conversation Context` turned on.
 
+Important Vapi checker rule: use Vapi's exact expected-tool-call checker only
+for deterministic arguments such as IDs, timestamps, and simple preference
+strings. Do not exact-match free-form medical summaries such as `symptoms`;
+the assistant may correctly normalize the same patient phrase as `rash`,
+`itchy`, or `rash on both arms`. Check those semantically with an
+LLM-as-a-judge turn instead.
+
 Use this header for every judge prompt:
 
 ```text
@@ -176,70 +183,79 @@ Use this exact turn order:
     `Approach`: `LLM-as-a-judge`
     Check that the assistant calls the `triage` tool after symptom collection. Do not use exact string matching on free-form symptom text.
 
-25. `Tool Response`
+21. `Tool Response`
     Paste the mocked `SPECIALTY_FOUND` response below.
 
-26. `Assistant`
+22. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
     Check that the assistant recommends Dermatology and asks whether that sounds right.
 
-27. `User`
+23. `User`
     `That sounds right.`
 
-28. `Assistant`
+24. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
     Check that the assistant asks how soon the patient wants to be seen.
 
-29. `User`
+25. `User`
     `Next week.`
 
-30. `Assistant`
+26. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
     Check that the assistant asks for morning, afternoon, or any preference.
 
-31. `User`
+27. `User`
     `Morning.`
 
-32. `Assistant`
+28. `Assistant`
     `Mock`: off
     `Evaluation`: on
-    Use tool validation for `find_slots` with:
+    Use exact tool validation for `find_slots` with these 3 expected arguments:
+    - `specialty_id = a0000000-0000-0000-0000-000000000003`
     - `preferred_day = next week`
     - `preferred_time = morning`
-    Do not fail the turn just because extra valid arguments such as `specialty_id` are included.
+    Do not add any other argument rows for this checkpoint. Vapi's expected-tool-call UI is exact-count, so extra optional rows can create false failures.
 
-33. `Tool Response`
+29. `Tool Response`
     Paste the mocked `OK` response below.
 
-34. `Assistant`
+30. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
     Treat the mocked tool response as authoritative. Check that the assistant presents no more than 3 slots and asks which one works best.
 
-35. `User`
+31. `User`
     `The first one works for me.`
 
-36. `Assistant`
+32. `Assistant`
     `Mock`: off
     `Evaluation`: on
-    Use tool validation for `book` with the required fields:
+    `Approach`: `LLM-as-a-judge`
+    Do not use Vapi's exact expected-tool-call checker for this `book` turn.
+    The `symptoms` argument is free-form and has produced correct variants like
+    `rash`, `itchy`, and `rash on both arms`, which makes exact string matching
+    flaky. Use the LLM-as-a-judge prompt for Turn 32 below instead.
+
+    The expected `book` contract is:
     - `patient_id = c-test-maya`
     - `doctor_id = b0000000-0000-0000-0000-000000000003`
     - `start_at = 2026-04-20T14:00:00Z`
     - `end_at = 2026-04-20T14:30:00Z`
-    Do not fail the turn just because extra valid booking metadata is included.
+    - `specialty_id = a0000000-0000-0000-0000-000000000003`
+    - `symptoms` should reflect the caller's rash/itchy concern.
+    The call should not include `reason` or `urgency` for this routine new-concern booking.
 
-37. `Tool Response`
+33. `Tool Response`
     Paste the mocked `CONFIRMED` response below.
 
-38. `Assistant`
+34. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
@@ -256,10 +272,10 @@ Use this exact turn order:
 7. `Yes.`
 8. `I have a rash on both arms and it's really itchy, irritated, and spreading.`
 9. `I don't have a specialist in mind.`
-12. `That sounds right.`
-13. `Next week.`
-14. `Morning.`
-15. `The first one works for me.`
+10. `That sounds right.`
+11. `Next week.`
+12. `Morning.`
+13. `The first one works for me.`
 
 ### Mock Tool Responses
 
@@ -435,6 +451,7 @@ PASS if ALL are true:
 
 FAIL if ANY are true:
 - The assistant asks for a severity rating or pain score.
+- The assistant asks the patient to describe symptoms again after they already gave a symptom description.
 - The assistant asks an unrelated question instead.
 
 Output exactly one word: pass or fail.
@@ -446,51 +463,17 @@ After Turn 20:
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
 
 PASS if ALL are true:
-- The assistant moves on to triage after symptoms and specialist preference are collected.
-- The assistant stays in the symptom-collection flow.
+- The assistant calls the triage tool after symptoms and specialist preference are collected.
+- The triage call clearly reflects the patient's rash/itchy symptoms, even if the wording is normalized or shortened.
 
 FAIL if ANY are true:
 - The assistant asks an extra severity or impact question.
-- The assistant jumps ahead to triage or scheduling too early.
+- The assistant jumps ahead to scheduling or slot search before triage.
 
 Output exactly one word: pass or fail.
 ```
 
 After Turn 22:
-
-```text
-You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
-
-PASS if ALL are true:
-- The assistant asks whether the patient has a specialist preference.
-- The assistant does not jump straight to booking or slot search.
-
-FAIL if ANY are true:
-- The assistant skips the specialist-preference question.
-- The assistant jumps directly to booking or slots too early.
-
-Output exactly one word: pass or fail.
-```
-
-After Turn 24:
-
-```text
-You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
-
-PASS if ALL are true:
-- The assistant calls the triage tool after collecting symptoms and specialist preference.
-- The triage call clearly reflects the patient's rash/itchy symptoms, even if the wording is normalized or shortened.
-- The assistant does not skip directly to slot search or booking before triage.
-
-FAIL if ANY are true:
-- The assistant does not call the triage tool.
-- The triage call is unrelated to the patient's symptoms.
-- The assistant skips triage and moves directly to scheduling.
-
-Output exactly one word: pass or fail.
-```
-
-After Turn 26:
 
 ```text
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
@@ -506,7 +489,7 @@ FAIL if ANY are true:
 Output exactly one word: pass or fail.
 ```
 
-After Turn 28:
+After Turn 24:
 
 ```text
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
@@ -522,7 +505,7 @@ FAIL if ANY are true:
 Output exactly one word: pass or fail.
 ```
 
-After Turn 30:
+After Turn 26:
 
 ```text
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
@@ -538,7 +521,7 @@ FAIL if ANY are true:
 Output exactly one word: pass or fail.
 ```
 
-After Turn 34:
+After Turn 30:
 
 ```text
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
@@ -560,7 +543,31 @@ FAIL if ANY are true:
 Output exactly one word: pass or fail.
 ```
 
-After Turn 38:
+After Turn 32:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant calls the book tool after the patient picks the first slot.
+- The book call uses patient_id c-test-maya.
+- The book call uses doctor_id b0000000-0000-0000-0000-000000000003.
+- The book call uses start_at 2026-04-20T14:00:00Z and end_at 2026-04-20T14:30:00Z.
+- The book call uses specialty_id a0000000-0000-0000-0000-000000000003.
+- The book call includes a symptoms argument that reflects the caller's rash, itchy arms, irritation, or spreading rash concern. Accept concise normalized values such as "rash", "itchy", or "rash on both arms".
+- The book call does not include reason or urgency.
+
+FAIL if ANY are true:
+- The assistant does not call book after the patient picks the first slot.
+- The book call uses the wrong patient, doctor, start time, end time, or specialty.
+- The symptoms argument is missing or unrelated to the caller's concern.
+- The book call includes reason or urgency for this routine new-concern booking.
+- The assistant calls a different scheduling tool instead of book.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 34:
 
 ```text
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
@@ -904,70 +911,79 @@ Use this exact turn order:
     `Approach`: `LLM-as-a-judge`
     Check that the assistant calls the `triage` tool after symptoms are collected. Do not use exact string matching on the free-form symptom text.
 
-23. `Tool Response`
+19. `Tool Response`
     Paste the mocked `SPECIALTY_FOUND` response below.
 
-24. `Assistant`
+20. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
     Check that the assistant recommends Gastroenterology and asks whether that sounds right.
 
-25. `User`
+21. `User`
     `That sounds right.`
 
-26. `Assistant`
+22. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
     Check that the assistant asks how soon the patient wants to be seen.
 
-27. `User`
+23. `User`
     `Next week.`
 
-28. `Assistant`
+24. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
     Check that the assistant asks for morning, afternoon, or any preference.
 
-29. `User`
+25. `User`
     `Afternoon.`
 
-30. `Assistant`
+26. `Assistant`
     `Mock`: off
     `Evaluation`: on
-    Use tool validation for `find_slots` with:
+    Use exact tool validation for `find_slots` with these 3 expected arguments:
+    - `specialty_id = a0000000-0000-0000-0000-000000000006`
     - `preferred_day = next week`
     - `preferred_time = afternoon`
-    Do not fail the turn just because extra valid arguments such as `specialty_id` are included.
+    Do not add any other argument rows for this checkpoint. Vapi's expected-tool-call UI is exact-count, so extra optional rows can create false failures.
 
-31. `Tool Response`
+27. `Tool Response`
     Paste the mocked `OK` response below.
 
-32. `Assistant`
+28. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
     Treat the mocked tool response as authoritative. Check that the assistant presents no more than 3 slots and asks which one works best.
 
-33. `User`
+29. `User`
     `The first option works.`
 
-34. `Assistant`
+30. `Assistant`
     `Mock`: off
     `Evaluation`: on
-    Use tool validation for `book` with the required fields:
+    `Approach`: `LLM-as-a-judge`
+    Do not use Vapi's exact expected-tool-call checker for this `book` turn
+    unless your checker can validate the `symptoms` key without exact string
+    matching its value. Use an LLM-as-a-judge checkpoint for the free-form
+    symptoms value.
+
+    The expected `book` contract is:
     - `patient_id = c0000000-0000-0000-0000-000000000002`
     - `doctor_id = b0000000-0000-0000-0000-000000000006`
     - `start_at = 2026-04-20T19:00:00Z`
     - `end_at = 2026-04-20T20:00:00Z`
-    Do not fail the turn just because extra valid booking metadata is included.
+    - `specialty_id = a0000000-0000-0000-0000-000000000006`
+    - `symptoms` should reflect the caller's stomach-pain/nausea concern.
+    The call should not include `reason` or `urgency` for this routine new-concern booking.
 
-35. `Tool Response`
+31. `Tool Response`
     Paste the mocked `CONFIRMED` response below.
 
-36. `Assistant`
+32. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
@@ -979,13 +995,14 @@ Use this exact turn order:
 2. `I've been there before.`
 3. `My UIN is two three four five six seven eight nine zero.`
 4. `Yes.`
-5. `This is for a new concern.`
-6. `I've been having stomach pain and nausea on and off for a few days.`
-7. `No specialist preference.`
-10. `That sounds right.`
-11. `Next week.`
-12. `Afternoon.`
-13. `The first option works.`
+5. `Yes.`
+6. `This is for a new concern.`
+7. `I've been having stomach pain and nausea on and off for a few days.`
+8. `No specialist preference.`
+9. `That sounds right.`
+10. `Next week.`
+11. `Afternoon.`
+12. `The first option works.`
 
 ### Mock Tool Responses
 
@@ -1136,6 +1153,7 @@ PASS if ALL are true:
 
 FAIL if ANY are true:
 - The assistant asks for a severity rating or pain score.
+- The assistant asks the patient to describe symptoms again after they already gave a symptom description.
 - The assistant asks an unrelated question instead.
 
 Output exactly one word: pass or fail.
@@ -1147,51 +1165,17 @@ After Turn 18:
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
 
 PASS if ALL are true:
-- The assistant moves on to triage after symptoms and specialist preference are collected.
-- The assistant stays in the symptom-collection flow.
+- The assistant calls the triage tool after symptoms and specialist preference are collected.
+- The triage call clearly reflects the patient's stomach-pain and nausea symptoms, even if the wording is normalized or shortened.
 
 FAIL if ANY are true:
 - The assistant asks an extra severity or impact question.
-- The assistant jumps ahead to triage or scheduling too early.
+- The assistant jumps ahead to scheduling or slot search before triage.
 
 Output exactly one word: pass or fail.
 ```
 
 After Turn 20:
-
-```text
-You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
-
-PASS if ALL are true:
-- The assistant asks whether the patient has a specialist preference.
-- The assistant does not jump straight to booking or slot search.
-
-FAIL if ANY are true:
-- The assistant skips the specialist-preference question.
-- The assistant jumps directly to booking or slots too early.
-
-Output exactly one word: pass or fail.
-```
-
-After Turn 22:
-
-```text
-You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
-
-PASS if ALL are true:
-- The assistant calls the triage tool after collecting symptoms and specialist preference.
-- The triage call clearly reflects the patient's stomach-pain and nausea symptoms, even if the wording is normalized or shortened.
-- The assistant does not skip directly to slot search or booking before triage.
-
-FAIL if ANY are true:
-- The assistant does not call the triage tool.
-- The triage call is unrelated to the patient's symptoms.
-- The assistant skips triage and moves directly to scheduling.
-
-Output exactly one word: pass or fail.
-```
-
-After Turn 24:
 
 ```text
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
@@ -1207,7 +1191,7 @@ FAIL if ANY are true:
 Output exactly one word: pass or fail.
 ```
 
-After Turn 26:
+After Turn 22:
 
 ```text
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
@@ -1223,7 +1207,7 @@ FAIL if ANY are true:
 Output exactly one word: pass or fail.
 ```
 
-After Turn 28:
+After Turn 24:
 
 ```text
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
@@ -1239,7 +1223,7 @@ FAIL if ANY are true:
 Output exactly one word: pass or fail.
 ```
 
-After Turn 32:
+After Turn 28:
 
 ```text
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
@@ -1261,7 +1245,31 @@ FAIL if ANY are true:
 Output exactly one word: pass or fail.
 ```
 
-After Turn 36:
+After Turn 30:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant calls the book tool after the patient picks the first slot.
+- The book call uses patient_id c0000000-0000-0000-0000-000000000002.
+- The book call uses doctor_id b0000000-0000-0000-0000-000000000006.
+- The book call uses start_at 2026-04-20T19:00:00Z and end_at 2026-04-20T20:00:00Z.
+- The book call uses specialty_id a0000000-0000-0000-0000-000000000006.
+- The book call includes a symptoms argument that reflects the caller's stomach pain or nausea concern.
+- The book call does not include reason or urgency.
+
+FAIL if ANY are true:
+- The assistant does not call book after the patient picks the first slot.
+- The book call uses the wrong patient, doctor, start time, end time, or specialty.
+- The symptoms argument is missing or unrelated to the caller's concern.
+- The book call includes reason or urgency for this routine new-concern booking.
+- The assistant calls a different scheduling tool instead of book.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 32:
 
 ```text
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
@@ -1372,48 +1380,49 @@ Use this exact turn order:
     `Approach`: `LLM-as-a-judge`
     Check that the assistant calls the `triage` tool after symptom collection. Do not use exact string matching on free-form symptom text.
 
-23. `Tool Response`
+19. `Tool Response`
     Paste the mocked `SPECIALTY_FOUND` response below.
 
-24. `Assistant`
+20. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
     Check that the assistant recommends Neurology and asks whether that sounds right.
 
-25. `User`
+21. `User`
     `That sounds right.`
 
-26. `Assistant`
+22. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
     Check that the assistant asks how soon the patient wants to be seen.
 
-27. `User`
+23. `User`
     `As soon as possible.`
 
-28. `Assistant`
+24. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
     Check that the assistant asks for morning, afternoon, or any preference.
 
-29. `User`
+25. `User`
     `Morning.`
 
-30. `Assistant`
+26. `Assistant`
     `Mock`: off
     `Evaluation`: on
-    Use tool validation for `find_slots` with:
+    Use exact tool validation for `find_slots` with these 3 expected arguments:
+    - `specialty_id = a0000000-0000-0000-0000-000000000005`
     - `preferred_day = as soon as possible`
     - `preferred_time = morning`
-    Do not fail the turn just because extra valid arguments such as `specialty_id` are included.
+    Do not add any other argument rows for this checkpoint. Vapi's expected-tool-call UI is exact-count, so extra optional rows can create false failures.
 
-31. `Tool Response`
+27. `Tool Response`
     Paste the mocked `OK` response below.
 
-32. `Assistant`
+28. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
@@ -1426,10 +1435,13 @@ Use this exact turn order:
 2. `I've been there before.`
 3. `My UIN is three four five six seven eight nine zero one.`
 4. `Yes.`
-5. `I've been getting migraines and headaches that keep coming back, and light makes them worse.`
-6. `No specialist preference.`
-9. `As soon as possible.`
-10. `Morning.`
+5. `Yes.`
+6. `This is for a new concern.`
+7. `I've been getting migraines and headaches that keep coming back, and light makes them worse.`
+8. `No specialist preference.`
+9. `That sounds right.`
+10. `As soon as possible.`
+11. `Morning.`
 
 ### Mock Tool Responses
 
@@ -1574,6 +1586,7 @@ PASS if ALL are true:
 
 FAIL if ANY are true:
 - The assistant asks for a severity rating or pain score.
+- The assistant asks the patient to describe symptoms again after they already gave a symptom description.
 - The assistant asks an unrelated question instead.
 
 Output exactly one word: pass or fail.
@@ -1585,51 +1598,17 @@ After Turn 18:
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
 
 PASS if ALL are true:
-- The assistant moves on to triage after symptoms and specialist preference are collected.
-- The assistant stays in the symptom-collection flow.
+- The assistant calls the triage tool after symptoms and specialist preference are collected.
+- The triage call clearly reflects the patient's migraine/headache symptoms, even if the wording is normalized or shortened.
 
 FAIL if ANY are true:
 - The assistant asks an extra severity or impact question.
-- The assistant jumps ahead to triage or scheduling too early.
+- The assistant jumps ahead to scheduling or slot search before triage.
 
 Output exactly one word: pass or fail.
 ```
 
 After Turn 20:
-
-```text
-You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
-
-PASS if ALL are true:
-- The assistant asks whether the patient has a specialist preference.
-- The assistant does not jump straight to booking or slot search.
-
-FAIL if ANY are true:
-- The assistant skips the specialist-preference question.
-- The assistant jumps directly to booking or slots too early.
-
-Output exactly one word: pass or fail.
-```
-
-After Turn 22:
-
-```text
-You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
-
-PASS if ALL are true:
-- The assistant calls the triage tool after collecting symptoms and specialist preference.
-- The triage call clearly reflects the patient's migraine/headache symptoms, even if the wording is normalized or shortened.
-- The assistant does not skip directly to slot search or booking before triage.
-
-FAIL if ANY are true:
-- The assistant does not call the triage tool.
-- The triage call is unrelated to the patient's symptoms.
-- The assistant skips triage and moves directly to scheduling.
-
-Output exactly one word: pass or fail.
-```
-
-After Turn 24:
 
 ```text
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
@@ -1645,7 +1624,7 @@ FAIL if ANY are true:
 Output exactly one word: pass or fail.
 ```
 
-After Turn 26:
+After Turn 22:
 
 ```text
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
@@ -1661,7 +1640,7 @@ FAIL if ANY are true:
 Output exactly one word: pass or fail.
 ```
 
-After Turn 28:
+After Turn 24:
 
 ```text
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
@@ -1677,7 +1656,7 @@ FAIL if ANY are true:
 Output exactly one word: pass or fail.
 ```
 
-After Turn 32:
+After Turn 28:
 
 ```text
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
@@ -1812,70 +1791,79 @@ Use this exact turn order:
     `Approach`: `LLM-as-a-judge`
     Check that the assistant calls the `triage` tool after symptoms are collected. Do not use exact string matching on the free-form symptom text.
 
-23. `Tool Response`
+19. `Tool Response`
     Paste the mocked `SPECIALTY_FOUND` response below.
 
-24. `Assistant`
+20. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
     Check that the assistant recommends Gastroenterology and asks whether that sounds right.
 
-25. `User`
+21. `User`
     `That sounds right.`
 
-26. `Assistant`
+22. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
     Check that the assistant asks how soon the patient wants to be seen.
 
-27. `User`
+23. `User`
     `Next week.`
 
-28. `Assistant`
+24. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
     Check that the assistant asks for morning, afternoon, or any preference.
 
-29. `User`
+25. `User`
     `Afternoon.`
 
-30. `Assistant`
+26. `Assistant`
     `Mock`: off
     `Evaluation`: on
-    Use tool validation for `find_slots` with:
+    Use exact tool validation for `find_slots` with these 3 expected arguments:
+    - `specialty_id = a0000000-0000-0000-0000-000000000006`
     - `preferred_day = next week`
     - `preferred_time = afternoon`
-    Do not fail the turn just because extra valid arguments such as `specialty_id` are included.
+    Do not add any other argument rows for this checkpoint. Vapi's expected-tool-call UI is exact-count, so extra optional rows can create false failures.
 
-31. `Tool Response`
+27. `Tool Response`
     Paste the mocked `OK` response below.
 
-32. `Assistant`
+28. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
     Treat the mocked tool response as authoritative. Check that the assistant presents no more than 3 slots and asks which one works best.
 
-33. `User`
+29. `User`
     `The first option works.`
 
-34. `Assistant`
+30. `Assistant`
     `Mock`: off
     `Evaluation`: on
-    Use tool validation for `book` with the required fields:
+    `Approach`: `LLM-as-a-judge`
+    Do not use Vapi's exact expected-tool-call checker for this `book` turn
+    unless your checker can validate the `symptoms` key without exact string
+    matching its value. Use an LLM-as-a-judge checkpoint for the free-form
+    symptoms value.
+
+    The expected `book` contract is:
     - `patient_id = c0000000-0000-0000-0000-000000000002`
     - `doctor_id = b0000000-0000-0000-0000-000000000006`
     - `start_at = 2026-04-20T19:00:00Z`
     - `end_at = 2026-04-20T20:00:00Z`
-    Do not fail the turn just because extra valid booking metadata is included.
+    - `specialty_id = a0000000-0000-0000-0000-000000000006`
+    - `symptoms` should reflect the caller's stomach-pain/nausea concern.
+    The call should not include `reason` or `urgency` for this routine new-concern booking.
 
-35. `Tool Response`
+31. `Tool Response`
     Paste the mocked `CONFIRMED` response below.
 
-36. `Assistant`
+32. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
@@ -1907,23 +1895,269 @@ Use this exact turn order:
 {"status":"CONFIRMED","appointment_id":"d-test-bob-demo","doctor_name":"Dr. Robert Kim","message":"All set — you're booked with Dr. Robert Kim for Monday, April 20 at 2 PM."}
 ```
 
-### Judge Prompt
+### Assistant Checkpoint
+
+Add one evaluated `Assistant` turn at the end of the flow, after the mocked `book` response.
+
+### Judge Prompts By Checkpoint
+
+Use these prompts for the evaluated `Assistant` turns in the workflow above.
+
+After Turn 2:
 
 ```text
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
 
 PASS if ALL are true:
-- The assistant identifies the returning patient before booking.
-- The assistant does not use register_patient anywhere in the flow.
-- The assistant confirms the identified patient before continuing.
-- The assistant follows the tool order identify_patient -> triage -> find_slots -> book.
-- The assistant clearly confirms the final appointment.
+- The assistant asks whether the caller has been to the clinic before or if this is their first time.
+- The assistant does not skip ahead to registration or booking.
 
 FAIL if ANY are true:
-- identify_patient is skipped.
-- register_patient appears anywhere in the flow.
-- The assistant suggests re-registration for this successful lookup.
-- The assistant books before confirming identity.
+- The assistant skips the first-time vs returning question.
+- The assistant jumps to an unrelated workflow.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 4:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant asks for the caller's UIN after the caller says they have been seen before.
+- The assistant moves into returning-patient identification.
+- The assistant does not suggest registration at this point.
+
+FAIL if ANY are true:
+- The assistant skips UIN collection.
+- The assistant incorrectly routes the caller into new-patient registration.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 6:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant reads back the UIN for confirmation.
+- The assistant asks whether the readback is correct.
+- The assistant does not call identify_patient before confirmation.
+
+FAIL if ANY are true:
+- The assistant skips UIN confirmation.
+- The assistant calls identify_patient before the caller confirms the UIN.
+
+Output exactly one word: pass or fail.
+```
+
+For Turn 8, use strict tool validation rather than an AI judge:
+- `identify_patient.uin = 234567890`
+
+After Turn 10:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant confirms the identified patient using the returned patient name Bob Martinez.
+- The assistant preserves the caller's existing booking intent.
+- The assistant does not ask the caller to register.
+
+FAIL if ANY are true:
+- The assistant does not confirm the identified patient.
+- The assistant loses the booking intent.
+- The assistant suggests re-registration despite a successful lookup.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 12:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- After confirming identity, the assistant asks whether the appointment is for a follow-up or a new concern.
+- The assistant preserves the booking intent.
+- The assistant does not incorrectly send the caller into registration.
+
+FAIL if ANY are true:
+- The assistant skips appointment-type determination entirely.
+- The assistant incorrectly asks the caller to register as a new patient.
+- The assistant jumps to an unrelated workflow.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 14:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant starts symptom collection for the new concern.
+- The assistant asks about the symptoms the patient is experiencing.
+- The assistant asks one question at a time.
+
+FAIL if ANY are true:
+- The assistant skips symptom collection.
+- The assistant jumps directly to triage, slots, or booking.
+- The assistant asks multiple questions at once.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 16:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant asks about specialist preference after symptoms are collected.
+- The assistant asks one question at a time.
+
+FAIL if ANY are true:
+- The assistant asks for a severity rating or pain score.
+- The assistant asks the patient to describe symptoms again after they already gave a symptom description.
+- The assistant asks an unrelated question instead.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 18:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant calls the triage tool after symptoms and specialist preference are collected.
+- The triage call clearly reflects the patient's stomach-pain and nausea symptoms, even if the wording is normalized or shortened.
+
+FAIL if ANY are true:
+- The assistant asks an extra severity or impact question.
+- The assistant jumps ahead to scheduling or slot search before triage.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 20:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant recommends Gastroenterology based on the tool response.
+- The assistant asks whether that recommendation sounds right.
+
+FAIL if ANY are true:
+- The assistant invents a different specialty.
+- The assistant skips specialty confirmation.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 22:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant asks how soon the patient wants to be seen.
+- The assistant does not call find_slots yet before collecting both day and time preferences.
+
+FAIL if ANY are true:
+- The assistant skips the scheduling-window question.
+- The assistant calls find_slots before collecting both preferences.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 24:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant asks whether the patient prefers morning, afternoon, or either.
+- The assistant does not call find_slots before collecting the time preference.
+
+FAIL if ANY are true:
+- The assistant skips the time-preference question.
+- The assistant calls find_slots too early.
+
+Output exactly one word: pass or fail.
+```
+
+For Turn 26, use exact tool validation rather than an AI judge:
+- `find_slots.specialty_id = a0000000-0000-0000-0000-000000000006`
+- `find_slots.preferred_day = next week`
+- `find_slots.preferred_time = afternoon`
+
+After Turn 28:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+Treat the mocked tool response as authoritative.
+
+PASS if ALL are true:
+- The assistant presents up to 3 slot options from the tool response.
+- The assistant accurately reflects the doctor name from the tool response.
+- The assistant accurately reflects the slot labels from the tool response.
+- The assistant asks the caller which option works best.
+
+FAIL if ANY are true:
+- The assistant invents a doctor, date, or time not present in the tool response.
+- The assistant omits the slot options entirely.
+- The assistant presents more than 3 options.
+- The assistant ignores the tool response and asks unrelated questions.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 30:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant calls the book tool after the patient picks the first slot.
+- The book call uses patient_id c0000000-0000-0000-0000-000000000002.
+- The book call uses doctor_id b0000000-0000-0000-0000-000000000006.
+- The book call uses start_at 2026-04-20T19:00:00Z and end_at 2026-04-20T20:00:00Z.
+- The book call uses specialty_id a0000000-0000-0000-0000-000000000006.
+- The book call includes a symptoms argument that reflects the caller's stomach pain or nausea concern.
+- The book call does not include reason or urgency.
+
+FAIL if ANY are true:
+- The assistant does not call book after the patient picks the first slot.
+- The book call uses the wrong patient, doctor, start time, end time, or specialty.
+- The symptoms argument is missing or unrelated to the caller's concern.
+- The book call includes reason or urgency for this routine new-concern booking.
+- The assistant calls a different scheduling tool instead of book.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 32:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+Treat the mocked tool response as authoritative.
+
+PASS if ALL are true:
+- The assistant clearly confirms the final appointment.
+- The assistant uses the doctor name from the tool response.
+- The assistant uses the booked date and time from the tool response.
+
+FAIL if ANY are true:
+- The assistant invents a different doctor, date, or time.
+- The assistant does not clearly confirm the booking.
+- The assistant resets the conversation instead of confirming the booking.
 
 Output exactly one word: pass or fail.
 ```
@@ -1989,41 +2223,59 @@ Use this exact turn order:
 12. `Assistant`
     `Mock`: off
     `Evaluation`: on
-    Use tool validation for `find_appointment` with:
-    - `patient_id = c0000000-0000-0000-0000-000000000006`
-    The call should reflect the appointment details the user gave, but do not fail just because the assistant includes an extra helpful filter such as `reason`.
+    `Approach`: `LLM-as-a-judge`
+    Check that the assistant asks one focused clarification about roughly when the appointment was. It should not ask unrelated questions or lose the reschedule intent.
 
-13. `Tool Response`
-    Paste the mocked `FOUND` response below.
+13. `User`
+    `It was next Tuesday morning.`
 
 14. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
-    Check that the assistant confirms the found appointment and asks whether that is the one to reschedule.
+    Delete any `find_appointment` block from **Expected Tool Calls** for this
+    turn. Do not use Vapi's exact expected-tool-call checker here. The live
+    assistant may include `include_past: true`, and Vapi can mis-handle boolean
+    expected values as quoted strings or fail on argument counts. Use the LLM
+    judge prompt for Turn 14 below instead.
 
-15. `User`
-    `Yes.`
+    The expected `find_appointment` contract is:
+    - `patient_id` should be `c0000000-0000-0000-0000-000000000006`
+    - the call should reflect Dr. Lisa Martinez
+    - the call should reflect the ear pain follow-up
+    - optional `include_past: true` is acceptable
+
+15. `Tool Response`
+    Paste the mocked `FOUND` response below.
 
 16. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
-    Check that the assistant asks when the caller wants to reschedule to.
+    Check that the assistant confirms the found appointment and asks whether that is the one to reschedule.
 
 17. `User`
-    `Next week.`
+    `Yes.`
 
 18. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
-    Check that the assistant asks for morning, afternoon, or any preference before calling `reschedule`.
+    Check that the assistant asks when the caller wants to reschedule to.
 
 19. `User`
-    `Afternoon.`
+    `Next week.`
 
 20. `Assistant`
+    `Mock`: off
+    `Evaluation`: on
+    `Approach`: `LLM-as-a-judge`
+    Check that the assistant asks for morning, afternoon, or any preference before calling `reschedule`.
+
+21. `User`
+    `Afternoon.`
+
+22. `Assistant`
     `Mock`: off
     `Evaluation`: on
     Use tool validation for `reschedule` with:
@@ -2032,33 +2284,48 @@ Use this exact turn order:
     - `preferred_day = next week`
     - `preferred_time = afternoon`
 
-21. `Tool Response`
+23. `Tool Response`
     Paste the mocked `SLOTS_AVAILABLE` response below.
 
-22. `Assistant`
+24. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
     Treat the mocked tool response as authoritative. Check that the assistant presents no more than 3 new-slot options and asks which one works best.
 
-23. `User`
+    Do not add a `Tool Response` turn after this assistant message. This turn
+    only speaks the slot options; it does not initiate a tool call. The next
+    turn must be the user selecting a slot.
+
+25. `User`
     `The first new time works for me.`
 
-24. `Assistant`
+26. `Assistant`
     `Mock`: off
     `Evaluation`: on
-    Use tool validation for `reschedule_finalize` with the required fields:
-    - `original_appointment_id = d0000000-0000-0000-0000-000000000005`
-    - `patient_id = c0000000-0000-0000-0000-000000000006`
-    - `doctor_id = b0000000-0000-0000-0000-000000000007`
-    - `start_at = 2026-04-23T19:00:00Z`
-    - `end_at = 2026-04-23T19:30:00Z`
-    Do not fail the turn just because extra valid fields such as `reason` or `specialty_id` are included.
+    `Approach`: `LLM-as-a-judge`
+    Delete any `reschedule_finalize` block from **Expected Tool Calls** for this
+    turn. Do not use Vapi's exact expected-tool-call checker here. The live
+    assistant may include valid optional fields such as `reason` or
+    `specialty_id`, and Vapi's checker is exact-count.
 
-25. `Tool Response`
+    The expected `reschedule_finalize` contract is:
+    - `original_appointment_id` should be `d0000000-0000-0000-0000-000000000005`
+    - `patient_id` should be `c0000000-0000-0000-0000-000000000006`
+    - `doctor_id` should be `b0000000-0000-0000-0000-000000000007`
+    - `start_at` should be `2026-04-23T19:00:00Z`
+    - `end_at` should be `2026-04-23T19:30:00Z`
+    - optional `reason` or `specialty_id` fields are acceptable
+    - separate `book` and `cancel` calls are not acceptable
+
+27. `Tool Response`
     Paste the mocked `RESCHEDULED` response below.
+    This tool response must be immediately after the assistant's
+    `reschedule_finalize` tool call. If Vapi says "No Tool Call ID matched,"
+    delete and recreate this Tool Response card so it is attached to the
+    `reschedule_finalize` call, not to the prior slot-presentation message.
 
-26. `Assistant`
+28. `Assistant`
     `Mock`: off
     `Evaluation`: on
     `Approach`: `LLM-as-a-judge`
@@ -2090,23 +2357,267 @@ Use this exact turn order:
 {"status":"RESCHEDULED","appointment_id":"d-test-nina-rescheduled","doctor_name":"Dr. Lisa Martinez","message":"Your appointment has been rescheduled. You're now booked with Dr. Lisa Martinez on Thursday, April 23 at 2 PM. Your previous appointment has been cancelled."}
 ```
 
-### Judge Prompt
+### Assistant Checkpoint
+
+Add one evaluated `Assistant` turn at the end of the flow, after the mocked `reschedule_finalize` response.
+
+### Judge Prompts By Checkpoint
+
+Use these prompts for the evaluated `Assistant` turns in the workflow above.
+
+After Turn 2:
 
 ```text
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
 
 PASS if ALL are true:
-- The assistant identifies the returning patient before rescheduling.
-- The assistant confirms the matched appointment before offering new slots.
-- The assistant asks for preferred day and preferred time before calling reschedule.
-- The assistant uses reschedule_finalize, not separate book and cancel calls.
-- The assistant clearly confirms the new appointment and the cancellation of the old one.
+- The assistant recognizes that the caller wants to reschedule an appointment.
+- The assistant asks for the caller's UIN immediately.
+- The assistant does not ask whether the caller is new or returning.
 
 FAIL if ANY are true:
-- identify_patient is skipped.
-- The assistant calls reschedule before collecting the patient's day and time preferences.
-- The assistant uses book and cancel separately instead of reschedule_finalize.
-- The assistant cancels the original appointment before the user selects a new slot.
+- The assistant asks whether the caller is new or returning before identification.
+- The assistant routes the caller into new-patient registration.
+- The assistant asks for appointment details before identifying the caller.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 4:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant reads back the UIN for confirmation.
+- The assistant asks whether the readback is correct.
+- The assistant does not call identify_patient before confirmation.
+
+FAIL if ANY are true:
+- The assistant skips UIN confirmation.
+- The assistant calls identify_patient before the caller confirms the UIN.
+- The assistant changes into an unrelated workflow.
+
+Output exactly one word: pass or fail.
+```
+
+For Turn 6, use strict tool validation rather than an AI judge:
+- `identify_patient.uin = 678901235`
+
+After Turn 8:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant says or clearly indicates the identified patient is Nina Carter.
+- The assistant asks the caller to confirm that identity.
+- The assistant does not ask the caller to register.
+
+FAIL if ANY are true:
+- The assistant names a different patient.
+- The assistant does not ask the caller to confirm the identity.
+- The assistant suggests registration despite a successful lookup.
+
+Output exactly one word: pass or fail.
+
+```
+
+After Turn 10:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- After confirming identity, the assistant asks which appointment the caller wants to reschedule.
+- The assistant preserves the reschedule intent.
+- The assistant does not search for appointments before the caller gives appointment details.
+
+FAIL if ANY are true:
+- The assistant skips asking which appointment should be rescheduled.
+- The assistant jumps directly to new-slot preferences before finding the existing appointment.
+- The assistant asks the caller to register as a new patient.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 12:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant asks one focused clarification about roughly when the appointment was.
+- The assistant preserves the reschedule intent.
+- The assistant does not ask unrelated questions.
+- The assistant does not ask for more than one additional appointment-detail field.
+
+FAIL if ANY are true:
+- The assistant loses the reschedule intent.
+- The assistant asks for unrelated information.
+- The assistant asks multiple additional appointment-detail questions at once.
+- The assistant routes the caller into registration or new booking.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 14:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+IMPORTANT: This checkpoint should not have any Vapi Expected Tool Calls configured. Judge the tool call from the conversation context only.
+
+PASS if ALL are true:
+- The assistant calls the find_appointment tool after the caller provides the rough timing.
+- The find_appointment call uses patient_id c0000000-0000-0000-0000-000000000006.
+- The find_appointment call reflects Dr. Lisa Martinez in doctor_name, reason, or another appointment-detail argument.
+- The find_appointment call reflects the ear pain follow-up in reason or another appointment-detail argument.
+- The assistant does not ask for more appointment details before calling find_appointment.
+
+FAIL if ANY are true:
+- The assistant does not call find_appointment after the rough timing answer.
+- The find_appointment call uses the wrong patient_id.
+- The call does not reflect either Dr. Lisa Martinez or the ear pain follow-up.
+- The assistant keeps asking for appointment details instead of searching.
+- The assistant routes the caller into registration, booking, or cancellation.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 16:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+Treat the mocked tool response as authoritative.
+
+PASS if ALL are true:
+- The assistant confirms the found appointment with Dr. Lisa Martinez.
+- The assistant reflects the appointment date or label from the tool response.
+- The assistant asks whether that is the appointment the caller wants to reschedule.
+- The assistant does not offer new slots before the caller confirms the matched appointment.
+
+FAIL if ANY are true:
+- The assistant ignores the found appointment from the tool response.
+- The assistant invents a different doctor, date, or appointment.
+- The assistant skips appointment confirmation.
+- The assistant moves to rescheduling before the caller confirms the match.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 18:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- After the caller confirms the matched appointment, the assistant asks when the caller wants to reschedule to.
+- The assistant asks for a preferred day or timing window.
+- The assistant does not call reschedule before collecting day and time preferences.
+
+FAIL if ANY are true:
+- The assistant skips asking when the caller wants the new appointment.
+- The assistant calls reschedule before collecting scheduling preferences.
+- The assistant cancels the existing appointment before a new slot is selected.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 20:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant asks whether the caller prefers morning, afternoon, or either.
+- The assistant does not call reschedule before collecting the time preference.
+- The assistant preserves the reschedule intent.
+
+FAIL if ANY are true:
+- The assistant skips the time-preference question.
+- The assistant calls reschedule too early.
+- The assistant asks unrelated booking or registration questions.
+
+Output exactly one word: pass or fail.
+```
+
+For Turn 22, use exact tool validation rather than an AI judge:
+- `reschedule.appointment_id = d0000000-0000-0000-0000-000000000005`
+- `reschedule.patient_id = c0000000-0000-0000-0000-000000000006`
+- `reschedule.preferred_day = next week`
+- `reschedule.preferred_time = afternoon`
+
+After Turn 24:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+Treat the mocked tool response as authoritative.
+
+PASS if ALL are true:
+- The assistant presents up to 3 new-slot options from the tool response.
+- The assistant accurately reflects Dr. Lisa Martinez from the tool response.
+- The assistant accurately reflects the slot labels from the tool response.
+- The assistant asks which new slot works best.
+
+FAIL if ANY are true:
+- The assistant invents a doctor, date, or time not present in the tool response.
+- The assistant omits the new-slot options entirely.
+- The assistant presents more than 3 options.
+- The assistant ignores the tool response and asks unrelated questions.
+
+Output exactly one word: pass or fail.
+```
+
+Important dashboard ordering note: after this Turn 24 slot-presentation
+checkpoint, add the user selection turn (`The first new time works for me.`).
+Do not add a Tool Response card until after Turn 26 initiates
+`reschedule_finalize`.
+
+After Turn 26:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+IMPORTANT: This checkpoint should not have any Vapi Expected Tool Calls configured. Judge the tool call from the conversation context only.
+
+PASS if ALL are true:
+- The assistant calls reschedule_finalize after the caller picks the first new slot.
+- The reschedule_finalize call uses original_appointment_id d0000000-0000-0000-0000-000000000005.
+- The reschedule_finalize call uses patient_id c0000000-0000-0000-0000-000000000006.
+- The reschedule_finalize call uses doctor_id b0000000-0000-0000-0000-000000000007.
+- The reschedule_finalize call uses start_at 2026-04-23T19:00:00Z and end_at 2026-04-23T19:30:00Z.
+- The assistant does not use separate book and cancel calls.
+
+FAIL if ANY are true:
+- The assistant does not call reschedule_finalize after the caller picks the first new slot.
+- The reschedule_finalize call uses the wrong original appointment, patient, doctor, start time, or end time.
+- The assistant uses separate book and cancel calls instead of reschedule_finalize.
+- The assistant asks the caller to choose a slot again instead of finalizing the selected first slot.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 28:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+Treat the mocked tool response as authoritative.
+
+PASS if ALL are true:
+- The assistant clearly confirms the reschedule succeeded.
+- The assistant uses Dr. Lisa Martinez from the tool response.
+- The assistant uses the new appointment date and time from the tool response.
+- The assistant says or clearly implies that the previous appointment has been cancelled.
+
+FAIL if ANY are true:
+- The assistant invents a different doctor, date, or time.
+- The assistant does not clearly confirm the new appointment.
+- The assistant fails to mention the previous appointment was cancelled.
+- The assistant suggests the reschedule is still pending after the tool returned RESCHEDULED.
 
 Output exactly one word: pass or fail.
 ```
@@ -2172,9 +2683,17 @@ Use this exact turn order:
 12. `Assistant`
     `Mock`: off
     `Evaluation`: on
-    Use tool validation for `find_appointment` with:
-    - `patient_id = c0000000-0000-0000-0000-000000000001`
-    The call should reflect the appointment details the user gave, but do not fail just because the assistant includes an extra helpful filter such as `reason`.
+    `Approach`: `LLM-as-a-judge`
+    Delete any `find_appointment` block from **Expected Tool Calls** for this
+    turn. Do not use Vapi's exact expected-tool-call checker here. The live
+    assistant may include helpful filters such as `doctor_name`, `reason`, or
+    `include_past`, and Vapi can fail on exact argument counts or boolean
+    values. Use the LLM judge prompt for Turn 12 below instead.
+
+    The expected `find_appointment` contract is:
+    - `patient_id` should be `c0000000-0000-0000-0000-000000000001`
+    - the call should reflect Dr. Maria Torres
+    - the call should reflect the cardiology / chest concern or next Tuesday morning
 
 13. `Tool Response`
     Paste the mocked `FOUND` response below.
@@ -2223,23 +2742,156 @@ Use this exact turn order:
 {"status":"CANCELLED","appointment_id":"d0000000-0000-0000-0000-000000000001","doctor_name":"Dr. Maria Torres","message":"Your appointment with Dr. Maria Torres has been cancelled."}
 ```
 
-### Judge Prompt
+### Assistant Checkpoint
+
+Add one evaluated `Assistant` turn at the end of the flow, after the mocked `cancel` response.
+
+### Judge Prompts By Checkpoint
+
+Use these prompts for the evaluated `Assistant` turns in the workflow above.
+
+After Turn 2:
 
 ```text
 You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
 
 PASS if ALL are true:
-- The assistant identifies the returning patient before cancellation.
-- The assistant confirms the matched appointment before cancelling it.
-- The assistant only calls cancel after the user explicitly confirms.
-- The assistant clearly confirms the cancellation result.
-- The assistant offers rebooking or other help after cancelling.
+- The assistant recognizes that the caller wants to cancel an appointment.
+- The assistant asks for the caller's UIN immediately.
+- The assistant does not ask whether the caller is new or returning.
 
 FAIL if ANY are true:
-- identify_patient is skipped.
-- The assistant calls cancel before explicit patient confirmation.
-- The assistant suggests registration in this successful returning-patient flow.
-- The assistant ends the call without clearly confirming the cancellation result.
+- The assistant asks whether the caller is new or returning before identification.
+- The assistant routes the caller into registration.
+- The assistant asks which appointment to cancel before identifying the caller.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 4:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant reads back the UIN for confirmation.
+- The assistant asks whether the readback is correct.
+- The assistant does not call identify_patient before confirmation.
+
+FAIL if ANY are true:
+- The assistant skips UIN confirmation.
+- The assistant calls identify_patient before the caller confirms the UIN.
+- The assistant changes into an unrelated workflow.
+
+Output exactly one word: pass or fail.
+```
+
+For Turn 6, use strict tool validation rather than an AI judge:
+- `identify_patient.uin = 123456789`
+
+After Turn 8:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- The assistant confirms the identified patient using the returned patient name Alice Wang.
+- The assistant preserves the caller's cancellation intent.
+- The assistant does not ask the caller to register.
+
+FAIL if ANY are true:
+- The assistant does not confirm the identified patient.
+- The assistant loses the cancellation intent.
+- The assistant suggests registration despite a successful lookup.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 10:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+PASS if ALL are true:
+- After confirming identity, the assistant asks which appointment the caller wants to cancel.
+- The assistant preserves the cancellation intent.
+- The assistant does not search for appointments before the caller gives appointment details.
+
+FAIL if ANY are true:
+- The assistant skips asking which appointment should be cancelled.
+- The assistant jumps directly to cancellation before finding the existing appointment.
+- The assistant asks the caller to register as a new patient.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 12:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+IMPORTANT: This checkpoint should not have any Vapi Expected Tool Calls configured. Judge the tool call from the conversation context only.
+
+PASS if ALL are true:
+- The assistant calls the find_appointment tool after the caller gives appointment details.
+- The find_appointment call uses patient_id c0000000-0000-0000-0000-000000000001.
+- The find_appointment call reflects Dr. Maria Torres in doctor_name, reason, or another appointment-detail argument.
+- The find_appointment call reflects the cardiology appointment, chest concern, or next Tuesday morning in reason or another appointment-detail argument.
+- The assistant does not ask for more appointment details before calling find_appointment.
+
+FAIL if ANY are true:
+- The assistant does not call find_appointment after the caller gives appointment details.
+- The find_appointment call uses the wrong patient_id.
+- The call does not reflect either Dr. Maria Torres or the appointment details the caller gave.
+- The assistant keeps asking for appointment details instead of searching.
+- The assistant routes the caller into registration, booking, or rescheduling.
+
+Output exactly one word: pass or fail.
+```
+
+After Turn 14:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+Treat the mocked tool response as authoritative.
+
+PASS if ALL are true:
+- The assistant confirms the found appointment with Dr. Maria Torres.
+- The assistant reflects the appointment date or label from the tool response.
+- The assistant asks whether the caller is sure they want to cancel it.
+- The assistant does not call cancel before this explicit confirmation.
+
+FAIL if ANY are true:
+- The assistant ignores the found appointment from the tool response.
+- The assistant invents a different doctor, date, or appointment.
+- The assistant skips cancellation confirmation.
+- The assistant calls cancel before the caller explicitly confirms.
+
+Output exactly one word: pass or fail.
+```
+
+For Turn 16, use exact tool validation rather than an AI judge:
+- `cancel.appointment_id = d0000000-0000-0000-0000-000000000001`
+- Fail if the assistant calls `cancel` before the caller says yes to cancelling the matched appointment.
+
+After Turn 18:
+
+```text
+You are an LLM-Judge. Evaluate the assistant behavior using the full mock conversation: {{messages}}.
+
+Treat the mocked tool response as authoritative.
+
+PASS if ALL are true:
+- The assistant clearly confirms the cancellation succeeded.
+- The assistant uses Dr. Maria Torres from the tool response or clearly references the cancelled appointment.
+- The assistant offers rebooking or asks whether there is anything else it can help with.
+
+FAIL if ANY are true:
+- The assistant does not clearly confirm the cancellation result.
+- The assistant says or implies the appointment is still active after the tool returned CANCELLED.
+- The assistant invents a different doctor or appointment.
+- The assistant ends without offering rebooking or other help.
 
 Output exactly one word: pass or fail.
 ```
@@ -2300,7 +2952,7 @@ Use this exact turn order:
     Check that the assistant asks for the phone number and does not call `register_patient` yet.
 
 11. `User`
-    `My phone number is one two three four five six seven eight.`
+    `My phone number is one two three four five six seven eight nine zero.`
 
 12. `Assistant`
     `Mock`: off
@@ -2317,7 +2969,7 @@ Use this exact turn order:
     Use tool validation for `register_patient` with:
     - `uin = 123456789`
     - `full_name = Taylor Reed`
-    - `phone = 12345678`
+    - `phone = 1234567890`
 
 15. `Tool Response`
     Paste the mocked `ALREADY_EXISTS` response below.
@@ -2356,7 +3008,7 @@ Use this exact turn order:
     Use tool validation for `register_patient` with:
     - `uin = 123456770`
     - `full_name = Taylor Reed`
-    - `phone = 12345678`
+    - `phone = 1234567890`
 
 23. `Tool Response`
     Paste the mocked `REGISTERED` response below.
@@ -2375,7 +3027,7 @@ Use this exact turn order:
 3. `My UIN is one two three four five six seven eight nine.`
 4. `Yes.`
 5. `My name is Taylor Reed.`
-6. `My phone number is one two three four five six seven eight.`
+6. `My phone number is one two three four five six seven eight nine zero.`
 7. `Yes.`
 8. `No, that's not me.`
 9. `My UIN is one two three four five six seven seven zero.`

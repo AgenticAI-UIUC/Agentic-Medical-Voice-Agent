@@ -29,7 +29,7 @@ def test_lookup_patient_rejects_non_9_digit_uin() -> None:
     assert result["reason"] == "WRONG_LENGTH"
     assert result["expected_digits"] == 9
     assert result["received_digits"] == 3
-    assert "9-digit university UIN" in result["message"]
+    assert "9-digit university ID number" in result["message"]
     assert "I heard 3 digits" in result["message"]
 
 
@@ -94,7 +94,7 @@ def test_register_patient_invalid_uin_includes_digit_counts() -> None:
     assert result["received_digits"] == 8
     assert (
         result["message"]
-        == "I heard 8 digits, but I need your 9-digit university UIN to register you."
+        == "I heard 8 digits, but I need your 9-digit university ID number to register you."
     )
 
 
